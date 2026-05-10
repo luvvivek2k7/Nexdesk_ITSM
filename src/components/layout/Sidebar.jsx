@@ -9,6 +9,9 @@ import {
   Users, Settings, Shield, ChevronRight,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
+import { useState, useEffect } from 'react'
+import { db, collection, query, where, onSnapshot } from '@/lib/firebase'
+import { ROLES } from '@/lib/constants'
 import { PERMISSIONS } from '@/lib/constants'
 import clsx from 'clsx'
 
@@ -75,7 +78,16 @@ const SIDEBAR_CONFIGS = {
 export default function Sidebar() {
   const location  = useLocation()
   const navigate  = useNavigate()
-  const { can }   = useAuth()
+  const { can, profile, role }   = useAuth()
+  const [openTickets, setOpenTickets] = useState(0)
+
+  useEffect(() => {
+    if (!profile?.uid) return
+    const constraints = [where('status', 'in', ['NEW', 'OPEN', 'ASSIGNED', 'IN_PROGRESS'])]
+    if (role === ROLES.USER) constraints.push(where('requesterId', '==', profile.uid))
+    const q = query(collection(db, 'tickets'), ...constraints)
+    return onSnapshot(q, snap => setOpenTickets(snap.size), () => {})
+  }, [profile?.uid, role])
 
   // Match config by current path prefix
   const base   = '/' + location.pathname.split('/')[1]
@@ -144,9 +156,9 @@ export default function Sidebar() {
                 >
                   <item.icon size={14} className="flex-shrink-0" />
                   <span className="flex-1 text-[13px]">{item.label}</span>
-                  {item.badge && (
+                  {item.badge && openTickets > 0 && (
                     <span className="ml-auto px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-red-500 text-white">
-                      3
+                      {openTickets > 99 ? '99+' : openTickets}
                     </span>
                   )}
                   {active && !item.badge && (

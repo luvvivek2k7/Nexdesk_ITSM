@@ -3,7 +3,7 @@
 // All Firestore operations for tickets: create, read, update, real-time listen
 // ─────────────────────────────────────────────────────────────────────────────
 import {
-  db, collection, doc, getDoc, getDocs, addDoc, updateDoc,
+  db, collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc,
   query, where, orderBy, limit, onSnapshot,
   serverTimestamp, Timestamp,
 } from '@/lib/firebase'
@@ -13,6 +13,7 @@ const COLLECTION = 'tickets'
 const ref = () => collection(db, COLLECTION)
 
 // ── ID generator (readable: INC-YYYYMMDD-NNN) ────────────────────────────────
+// Uses meta counters instead of querying tickets (regular users can't read all tickets)
 async function generateTicketId(type) {
   const prefix = {
     INCIDENT:        'INC',
@@ -25,12 +26,13 @@ async function generateTicketId(type) {
   const today = new Date()
   const date  = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`
 
-  // Count today's tickets of this type
-  const q     = query(ref(), where('ticketDate', '==', date), where('type', '==', type))
-  const snap  = await getDocs(q)
-  const seq   = String(snap.size + 1).padStart(3, '0')
+  // Use a counter doc in meta collection — all signed-in users can read/write meta
+  const counterRef  = doc(db, 'meta', `counter_${type}_${date}`)
+  const counterSnap = await getDoc(counterRef)
+  const seq         = (counterSnap.exists() ? (counterSnap.data().count ?? 0) : 0) + 1
+  await setDoc(counterRef, { count: seq, type, date }, { merge: true })
 
-  return `${prefix}-${date}-${seq}`
+  return `${prefix}-${date}-${String(seq).padStart(3, '0')}`
 }
 
 // ── CREATE ticket ─────────────────────────────────────────────────────────────
@@ -189,19 +191,26 @@ export async function assignTicket(id, { assigneeId, assigneeName }, assignedBy)
 }
 
 // ── REAL-TIME listener ────────────────────────────────────────────────────────
-export function listenToTickets(filters = {}, callback) {
+export function listenToTickets(filters = {}, callback, onError) {
   const constraints = [orderBy('createdAt', 'desc'), limit(100)]
 
-  if (filters.status)     constraints.unshift(where('status',     '==', filters.status))
-  if (filters.priority)   constraints.unshift(where('priority',   '==', filters.priority))
-  if (filters.type)       constraints.unshift(where('type',       '==', filters.type))
-  if (filters.assigneeId) constraints.unshift(where('assigneeId', '==', filters.assigneeId))
+  if (filters.status)      constraints.unshift(where('status',      '==', filters.status))
+  if (filters.priority)    constraints.unshift(where('priority',    '==', filters.priority))
+  if (filters.type)        constraints.unshift(where('type',        '==', filters.type))
+  if (filters.assigneeId)  constraints.unshift(where('assigneeId',  '==', filters.assigneeId))
+  if (filters.requesterId) constraints.unshift(where('requesterId', '==', filters.requesterId))
 
   const q = query(ref(), ...constraints)
-  return onSnapshot(q, (snap) => {
-    const tickets = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-    callback(tickets)
-  })
+  return onSnapshot(q,
+    (snap) => {
+      const tickets = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      callback(tickets)
+    },
+    (err) => {
+      console.error('listenToTickets error:', err)
+      if (onError) onError(err)
+    }
+  )
 }
 
 // ── REAL-TIME single ticket listener ─────────────────────────────────────────

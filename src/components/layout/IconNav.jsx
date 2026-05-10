@@ -9,6 +9,8 @@ import {
   Crown, Headphones, BarChart3, Code2, Wrench, User,
 } from 'lucide-react'
 import { useAuth }  from '@/context/AuthContext'
+import { useState, useEffect } from 'react'
+import { db, collection, query, where, onSnapshot } from '@/lib/firebase'
 import { useTheme } from '@/context/ThemeContext'
 import { ROLES }    from '@/lib/constants'
 import clsx from 'clsx'
@@ -42,6 +44,17 @@ export default function IconNav({ onToggleSidebar }) {
 
   const currentBase = '/' + (location.pathname.split('/')[1] || '')
   const RoleIcon = ROLE_ICONS[profile?.role] ?? User
+  const [notifCount, setNotifCount] = useState(0)
+
+  useEffect(() => {
+    if (!profile?.uid) return
+    const q = query(
+      collection(db, 'notifications'),
+      where('userId', '==', profile.uid),
+      where('read', '==', false)
+    )
+    return onSnapshot(q, snap => setNotifCount(snap.size), () => {})
+  }, [profile?.uid])
 
   return (
     <nav
@@ -126,7 +139,11 @@ export default function IconNav({ onToggleSidebar }) {
           title="Notifications"
         >
           <Bell size={16} />
-          <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-red-500" />
+          {notifCount > 0 && (
+            <span className="absolute top-1 right-1 min-w-[14px] h-3.5 rounded-full bg-red-500 flex items-center justify-center text-[9px] text-white font-bold px-0.5">
+              {notifCount > 9 ? '9+' : notifCount}
+            </span>
+          )}
         </button>
 
         {/* Settings */}

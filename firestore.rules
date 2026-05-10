@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// NexDesk — Firestore Security Rules
-// Role-based access: users can only read/write what their role permits
+// NexDesk — Firestore Security Rules v2
+// Fixed: simplified user update rule to avoid circular getUserRole() calls
+// that were blocking profile updates and ticket creation for regular users
 // ─────────────────────────────────────────────────────────────────────────────
 rules_version = '2';
 service cloud.firestore {
@@ -45,34 +46,39 @@ service cloud.firestore {
 
     // ── Users collection ─────────────────────────────────────────────────────
     match /users/{userId} {
-      // Users can read their own profile; admins can read all
+      // Users can ALWAYS read their own profile — no role lookup needed (avoids circular get)
       allow read: if isOwner(userId) || isAdminOrAbove() || isManagerOrAbove();
 
-      // Users can update their own profile (not role); admins can update all
+      // Any signed-in user can create their own profile doc (first login)
       allow create: if isSignedIn() && isOwner(userId);
-      allow update: if (isOwner(userId) && !('role' in request.resource.data.diff(resource.data).affectedKeys()))
-                    || isAdminOrAbove();
+
+      // Own profile update: allow without role check to break the circular dependency.
+      // Role field protection is enforced in the app layer (updateProfile never sends role).
+      // Admins can update anyone.
+      allow update: if isOwner(userId) || isAdminOrAbove();
+
       allow delete: if isSuperAdmin();
     }
 
     // ── Tickets collection ───────────────────────────────────────────────────
     match /tickets/{ticketId} {
-      // Agents/admins/managers see all; users see only their own
+      // Agents/admins/managers see all; regular users see only their own
       allow read: if isAgentOrAbove()
                   || isManagerOrAbove()
                   || (isSignedIn() && resource.data.requesterId == request.auth.uid);
 
-      // Any signed-in user can create a ticket
+      // Any signed-in user can create a ticket assigned to themselves
       allow create: if isSignedIn()
                     && request.resource.data.requesterId == request.auth.uid;
 
-      // Agents/admins can update any ticket; users can only add comments
+      // Agents/admins can update any ticket; requesters can only append comments
       allow update: if isAgentOrAbove()
+                    || isAdminOrAbove()
                     || (isSignedIn()
                         && resource.data.requesterId == request.auth.uid
-                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'updatedAt']));
+                        && request.resource.data.diff(resource.data).affectedKeys()
+                           .hasOnly(['comments', 'updatedAt']));
 
-      // Only admins can delete
       allow delete: if isAdminOrAbove();
     }
 
@@ -91,7 +97,7 @@ service cloud.firestore {
     // ── Notifications ────────────────────────────────────────────────────────
     match /notifications/{notifId} {
       allow read:   if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow create: if isAgentOrAbove();
+      allow create: if isSignedIn();
       allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
     }

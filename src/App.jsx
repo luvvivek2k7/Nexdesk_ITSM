@@ -93,7 +93,7 @@ export default function App() {
           </Route>
 
           {/* Admin */}
-          <Route path="admin" element={<Protected><AdminLayout /></Protected>}>
+          <Route path="admin" element={<Protected requiredRoles={['super_admin','it_admin']}><AdminLayout /></Protected>}>
             <Route index element={<Navigate to="users" replace />} />
             <Route path="users"    element={<UsersPage />} />
             <Route path="roles"    element={<RolesPage />} />

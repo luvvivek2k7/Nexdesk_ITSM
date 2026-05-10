@@ -27,12 +27,15 @@ export function AuthProvider({ children }) {
     if (snap.exists()) {
       // Update last seen
       await updateDoc(ref, { lastSeenAt: serverTimestamp() })
-      setProfile({ id: snap.id, ...snap.data() })
+      // Re-read full doc to get latest data (including active status)
+      const fresh = await getDoc(ref)
+      setProfile({ id: fresh.id, ...fresh.data() })
     } else {
       // First time — create profile
       // First user ever gets SUPER_ADMIN, otherwise USER
-      const allUsersSnap = await getDoc(doc(db, 'meta', 'stats'))
-      const isFirstUser  = !allUsersSnap.exists()
+      const statsRef     = doc(db, 'meta', 'stats')
+      const allUsersSnap = await getDoc(statsRef)
+      const isFirstUser  = !allUsersSnap.exists() || !(allUsersSnap.data()?.totalUsers)
 
       const newProfile = {
         uid:         firebaseUser.uid,
@@ -50,13 +53,16 @@ export function AuthProvider({ children }) {
           notifications: { email: true, push: true, sla: true },
         },
         active: true,
+        status: 'active',
       }
 
+      // Write user doc first, then update stats
       await setDoc(ref, newProfile)
 
       // Bump meta stats
-      await setDoc(doc(db, 'meta', 'stats'), {
+      await setDoc(statsRef, {
         totalUsers: (allUsersSnap.data()?.totalUsers ?? 0) + 1,
+        lastUserAt: serverTimestamp(),
       }, { merge: true })
 
       setProfile({ id: firebaseUser.uid, ...newProfile })
@@ -98,9 +104,13 @@ export function AuthProvider({ children }) {
   // ── Update profile ────────────────────────────────────────────────────────────
   const updateProfile = async (updates) => {
     if (!user) return
+    // Strip role from updates — role changes must go through assignRole()
+    const { role: _role, ...safeUpdates } = updates
     const ref = doc(db, 'users', user.uid)
-    await updateDoc(ref, { ...updates, updatedAt: serverTimestamp() })
-    setProfile(prev => ({ ...prev, ...updates }))
+    await updateDoc(ref, { ...safeUpdates, updatedAt: serverTimestamp() })
+    // Re-read from Firestore so local state is always in sync with DB
+    const snap = await getDoc(ref)
+    if (snap.exists()) setProfile({ id: snap.id, ...snap.data() })
   }
 
   // ── Assign role (Super Admin only) ────────────────────────────────────────────
