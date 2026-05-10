@@ -1,0 +1,36 @@
+{
+  "name": "nexdesk",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NexDesk — Digital Workplace Hub. ITSM, ITAM, IAM, HRMS, FSO unified platform.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint src --ext .js,.jsx",
+    "deploy": "npm run build && firebase deploy"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.0",
+    "firebase": "^10.13.0",
+    "recharts": "^2.12.7",
+    "lucide-react": "^0.447.0",
+    "clsx": "^2.1.1",
+    "date-fns": "^3.6.0",
+    "react-hot-toast": "^2.4.1",
+    "react-hook-form": "^7.53.0",
+    "zod": "^3.23.8",
+    "framer-motion": "^11.5.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.5",
+    "tailwindcss": "^3.4.12",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "eslint": "^9.11.1"
+  }
+}

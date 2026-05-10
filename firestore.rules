@@ -1,0 +1,112 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// NexDesk — Firestore Security Rules
+// Role-based access: users can only read/write what their role permits
+// ─────────────────────────────────────────────────────────────────────────────
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ────────────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isRole(role) {
+      return isSignedIn() && getUserRole() == role;
+    }
+
+    function isAnyRole(roles) {
+      return isSignedIn() && getUserRole() in roles;
+    }
+
+    function isSuperAdmin() {
+      return isRole('super_admin');
+    }
+
+    function isAdminOrAbove() {
+      return isAnyRole(['super_admin', 'it_admin']);
+    }
+
+    function isAgentOrAbove() {
+      return isAnyRole(['super_admin', 'it_admin', 'it_agent']);
+    }
+
+    function isManagerOrAbove() {
+      return isAnyRole(['super_admin', 'it_admin', 'manager']);
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // ── Users collection ─────────────────────────────────────────────────────
+    match /users/{userId} {
+      // Users can read their own profile; admins can read all
+      allow read: if isOwner(userId) || isAdminOrAbove() || isManagerOrAbove();
+
+      // Users can update their own profile (not role); admins can update all
+      allow create: if isSignedIn() && isOwner(userId);
+      allow update: if (isOwner(userId) && !('role' in request.resource.data.diff(resource.data).affectedKeys()))
+                    || isAdminOrAbove();
+      allow delete: if isSuperAdmin();
+    }
+
+    // ── Tickets collection ───────────────────────────────────────────────────
+    match /tickets/{ticketId} {
+      // Agents/admins/managers see all; users see only their own
+      allow read: if isAgentOrAbove()
+                  || isManagerOrAbove()
+                  || (isSignedIn() && resource.data.requesterId == request.auth.uid);
+
+      // Any signed-in user can create a ticket
+      allow create: if isSignedIn()
+                    && request.resource.data.requesterId == request.auth.uid;
+
+      // Agents/admins can update any ticket; users can only add comments
+      allow update: if isAgentOrAbove()
+                    || (isSignedIn()
+                        && resource.data.requesterId == request.auth.uid
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'updatedAt']));
+
+      // Only admins can delete
+      allow delete: if isAdminOrAbove();
+    }
+
+    // ── Knowledge articles ───────────────────────────────────────────────────
+    match /knowledge/{articleId} {
+      allow read:   if isSignedIn();
+      allow write:  if isAgentOrAbove();
+    }
+
+    // ── SLA policies ─────────────────────────────────────────────────────────
+    match /sla_policies/{policyId} {
+      allow read:   if isSignedIn();
+      allow write:  if isAdminOrAbove();
+    }
+
+    // ── Notifications ────────────────────────────────────────────────────────
+    match /notifications/{notifId} {
+      allow read:   if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isAgentOrAbove();
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // ── Meta stats ───────────────────────────────────────────────────────────
+    match /meta/{docId} {
+      allow read:   if isSignedIn();
+      allow write:  if isSignedIn(); // Used for first-user detection
+    }
+
+    // ── Audit logs ───────────────────────────────────────────────────────────
+    match /audit_logs/{logId} {
+      allow read:   if isAdminOrAbove();
+      allow create: if isSignedIn();
+      allow update, delete: if false; // Immutable
+    }
+  }
+}
