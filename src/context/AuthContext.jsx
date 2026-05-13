@@ -32,7 +32,12 @@ export function AuthProvider({ children }) {
       setProfile({ id: fresh.id, ...fresh.data() })
     } else {
       // First time — create profile
-      // First user ever gets SUPER_ADMIN, otherwise USER
+      // Check for pending invite first, then fall back to first-user/default logic
+      const inviteRef  = doc(db, 'invites', firebaseUser.email?.toLowerCase?.() ?? '')
+      const inviteSnap = await getDoc(inviteRef)
+      const pendingInvite = inviteSnap.exists() ? inviteSnap.data() : null
+
+      // First user ever gets SUPER_ADMIN, others get invited role or USER
       const statsRef     = doc(db, 'meta', 'stats')
       const allUsersSnap = await getDoc(statsRef)
       const isFirstUser  = !allUsersSnap.exists() || !(allUsersSnap.data()?.totalUsers)
@@ -42,8 +47,8 @@ export function AuthProvider({ children }) {
         email:       firebaseUser.email,
         displayName: firebaseUser.displayName,
         photoURL:    firebaseUser.photoURL,
-        role:        isFirstUser ? ROLES.SUPER_ADMIN : ROLES.USER,
-        department:  '',
+        role:        isFirstUser ? ROLES.SUPER_ADMIN : (pendingInvite?.role ?? ROLES.USER),
+        department:  pendingInvite?.department ?? '',
         phone:       '',
         createdAt:   serverTimestamp(),
         lastSeenAt:  serverTimestamp(),
@@ -64,6 +69,11 @@ export function AuthProvider({ children }) {
         totalUsers: (allUsersSnap.data()?.totalUsers ?? 0) + 1,
         lastUserAt: serverTimestamp(),
       }, { merge: true })
+
+      // Mark invite as accepted
+      if (pendingInvite) {
+        await setDoc(inviteRef, { status: 'accepted', acceptedAt: serverTimestamp() }, { merge: true })
+      }
 
       setProfile({ id: firebaseUser.uid, ...newProfile })
     }
@@ -115,7 +125,7 @@ export function AuthProvider({ children }) {
 
   // ── Assign role (Super Admin only) ────────────────────────────────────────────
   const assignRole = async (targetUserId, newRole) => {
-    if (!can(PERMISSIONS.ASSIGN_ROLES)) throw new Error('Insufficient permissions')
+    if (!can('ASSIGN_ROLES')) throw new Error('Insufficient permissions')
     const ref = doc(db, 'users', targetUserId)
     await updateDoc(ref, { role: newRole, updatedAt: serverTimestamp() })
   }

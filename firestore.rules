@@ -71,6 +71,15 @@ service cloud.firestore {
       allow write: if isSignedIn();
     }
 
+    // Invites — created by admins, read by invited user via token email match
+    match /invites/{email} {
+      allow read: if isAdminOrAbove()
+                  || (isSignedIn() && request.auth.token.email.lower() == email);
+      allow create, update: if isAdminOrAbove()
+                  || (isSignedIn() && request.auth.token.email.lower() == email);
+      allow delete: if isAdminOrAbove();
+    }
+
     // Audit logs (immutable)
     match /audit_logs/{logId} {
       allow read: if isAdminOrAbove();

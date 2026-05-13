@@ -21,14 +21,14 @@ import { formatDistanceToNow } from 'date-fns'
 
 // ── Module cards data ─────────────────────────────────────────────────────────
 const MODULE_CARDS = [
-  { id:'itsm',    label:'ITSM',           icon:'🎫', path:'/itsm',    color:'blue',   phase:1, desc:'Incidents, requests, SLA'    },
-  { id:'itam',    label:'ITAM',           icon:'🖥',  path:'/itam',   color:'cyan',   phase:2, status:'live', desc:'Assets, CMDB, lifecycle'      },
-  { id:'iam',     label:'IAM',            icon:'🔐', path:'/iam',     color:'violet', phase:2, desc:'Access governance, approvals'  },
-  { id:'hrms',    label:'HRMS',           icon:'👥', path:'/hrms',    color:'green',  phase:3, desc:'People, onboarding, leave'     },
-  { id:'fso',     label:'Field Services', icon:'🔧', path:'/fso',     color:'amber',  phase:2, desc:'Dispatch, work orders, map'    },
-  { id:'visitor', label:'Visitor Mgmt',   icon:'🏢', path:'/visitor', color:'orange', phase:2, desc:'Premises, check-in, badges'    },
-  { id:'chatbot', label:'Chatbot',        icon:'💬', path:'/chatbot', color:'pink',   phase:3, desc:'AI ticket creation, NLP'       },
-  { id:'payroll', label:'Payroll',        icon:'💰', path:'/payroll', color:'gray',   phase:3, desc:'Payslips, tax, HR sync'        },
+  { id:'itsm',    label:'ITSM',           icon:'🎫', path:'/itsm',    color:'blue',   live:true,  desc:'Incidents, requests, SLA'      },
+  { id:'itam',    label:'ITAM',           icon:'🖥',  path:'/itam',   color:'cyan',   live:true,  desc:'Assets, CMDB, lifecycle'       },
+  { id:'reports', label:'Reports',        icon:'📊', path:'/reports', color:'green',  live:true,  desc:'Analytics, SLA trends, agents' },
+  { id:'iam',     label:'IAM',            icon:'🔐', path:'/iam',     color:'violet', live:false, phase:3, desc:'Access governance, approvals'  },
+  { id:'hrms',    label:'HRMS',           icon:'👥', path:'/hrms',    color:'green',  live:false, phase:3, desc:'People, onboarding, leave'     },
+  { id:'fso',     label:'Field Services', icon:'🔧', path:'/fso',     color:'amber',  live:false, phase:3, desc:'Dispatch, work orders, map'    },
+  { id:'visitor', label:'Visitor Mgmt',   icon:'🏢', path:'/visitor', color:'orange', live:false, phase:3, desc:'Premises, check-in, badges'    },
+  { id:'chatbot', label:'Chatbot',        icon:'💬', path:'/chatbot', color:'pink',   live:false, phase:3, desc:'AI ticket creation, NLP'       },
 ]
 
 // ── Recent activity item ──────────────────────────────────────────────────────
@@ -199,11 +199,11 @@ export default function PortalPage() {
               <h2 className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
                 All Modules
               </h2>
-              <Badge variant="default">{MODULE_CARDS.filter(m => m.phase === 1).length} live · {MODULE_CARDS.filter(m => m.phase > 1).length} planned</Badge>
+              <Badge variant="default">{MODULE_CARDS.filter(m => m.live).length} live · {MODULE_CARDS.filter(m => !m.live).length} planned</Badge>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {MODULE_CARDS.map(mod => {
-                const isLive = mod.phase === 1
+                const isLive = mod.live === true
                 return (
                   <button
                     key={mod.id}
@@ -361,8 +361,8 @@ export default function PortalPage() {
             <div className="space-y-2">
               <NoticeCard
                 type="info"
-                title="NexDesk Phase 1 Live"
-                body="ITSM module is fully operational. ITAM and IAM modules are coming in Phase 2."
+                title="NexDesk Phase 2 Live 🚀"
+                body="ITSM and ITAM are fully operational. Reports & Analytics now live. Phase 3: IAM, HRMS, Field Services."
               />
               <NoticeCard
                 type="success"
