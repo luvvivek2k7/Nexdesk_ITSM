@@ -1,118 +1,81 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// NexDesk — Firestore Security Rules v2
-// Fixed: simplified user update rule to avoid circular getUserRole() calls
-// that were blocking profile updates and ticket creation for regular users
-// ─────────────────────────────────────────────────────────────────────────────
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Helper functions ────────────────────────────────────────────────────
-    function isSignedIn() {
-      return request.auth != null;
-    }
+    function isSignedIn() { return request.auth != null; }
+    function getUserRole() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role; }
+    function isRole(role) { return isSignedIn() && getUserRole() == role; }
+    function isAnyRole(roles) { return isSignedIn() && getUserRole() in roles; }
+    function isSuperAdmin() { return isRole('super_admin'); }
+    function isAdminOrAbove() { return isAnyRole(['super_admin', 'it_admin']); }
+    function isAgentOrAbove() { return isAnyRole(['super_admin', 'it_admin', 'it_agent']); }
+    function isManagerOrAbove() { return isAnyRole(['super_admin', 'it_admin', 'manager']); }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
 
-    function getUserRole() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
-    }
-
-    function isRole(role) {
-      return isSignedIn() && getUserRole() == role;
-    }
-
-    function isAnyRole(roles) {
-      return isSignedIn() && getUserRole() in roles;
-    }
-
-    function isSuperAdmin() {
-      return isRole('super_admin');
-    }
-
-    function isAdminOrAbove() {
-      return isAnyRole(['super_admin', 'it_admin']);
-    }
-
-    function isAgentOrAbove() {
-      return isAnyRole(['super_admin', 'it_admin', 'it_agent']);
-    }
-
-    function isManagerOrAbove() {
-      return isAnyRole(['super_admin', 'it_admin', 'manager']);
-    }
-
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    // ── Users collection ─────────────────────────────────────────────────────
+    // Users
     match /users/{userId} {
-      // Users can ALWAYS read their own profile — no role lookup needed (avoids circular get)
       allow read: if isOwner(userId) || isAdminOrAbove() || isManagerOrAbove();
-
-      // Any signed-in user can create their own profile doc (first login)
       allow create: if isSignedIn() && isOwner(userId);
-
-      // Own profile update: allow without role check to break the circular dependency.
-      // Role field protection is enforced in the app layer (updateProfile never sends role).
-      // Admins can update anyone.
       allow update: if isOwner(userId) || isAdminOrAbove();
-
       allow delete: if isSuperAdmin();
     }
 
-    // ── Tickets collection ───────────────────────────────────────────────────
+    // Tickets
     match /tickets/{ticketId} {
-      // Agents/admins/managers see all; regular users see only their own
-      allow read: if isAgentOrAbove()
-                  || isManagerOrAbove()
+      allow read: if isAgentOrAbove() || isManagerOrAbove()
                   || (isSignedIn() && resource.data.requesterId == request.auth.uid);
-
-      // Any signed-in user can create a ticket assigned to themselves
-      allow create: if isSignedIn()
-                    && request.resource.data.requesterId == request.auth.uid;
-
-      // Agents/admins can update any ticket; requesters can only append comments
-      allow update: if isAgentOrAbove()
-                    || isAdminOrAbove()
-                    || (isSignedIn()
-                        && resource.data.requesterId == request.auth.uid
-                        && request.resource.data.diff(resource.data).affectedKeys()
-                           .hasOnly(['comments', 'updatedAt']));
-
+      allow create: if isSignedIn() && request.resource.data.requesterId == request.auth.uid;
+      allow update: if isAgentOrAbove() || isAdminOrAbove()
+                    || (isSignedIn() && resource.data.requesterId == request.auth.uid
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments','updatedAt']));
       allow delete: if isAdminOrAbove();
     }
 
-    // ── Knowledge articles ───────────────────────────────────────────────────
+    // Assets (ITAM) — agents and above can manage
+    match /assets/{assetId} {
+      allow read: if isAgentOrAbove() || isManagerOrAbove();
+      allow create: if isAgentOrAbove();
+      allow update: if isAgentOrAbove();
+      allow delete: if isAdminOrAbove();
+    }
+
+    // Workflows
+    match /workflows/{wfId} {
+      allow read: if isAgentOrAbove();
+      allow write: if isAdminOrAbove();
+    }
+
+    // Knowledge
     match /knowledge/{articleId} {
-      allow read:   if isSignedIn();
-      allow write:  if isAgentOrAbove();
+      allow read: if isSignedIn();
+      allow write: if isAgentOrAbove();
     }
 
-    // ── SLA policies ─────────────────────────────────────────────────────────
+    // SLA policies
     match /sla_policies/{policyId} {
-      allow read:   if isSignedIn();
-      allow write:  if isAdminOrAbove();
+      allow read: if isSignedIn();
+      allow write: if isAdminOrAbove();
     }
 
-    // ── Notifications ────────────────────────────────────────────────────────
+    // Notifications
     match /notifications/{notifId} {
-      allow read:   if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow create: if isSignedIn();
       allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
     }
 
-    // ── Meta stats ───────────────────────────────────────────────────────────
+    // Meta (counters, stats)
     match /meta/{docId} {
-      allow read:   if isSignedIn();
-      allow write:  if isSignedIn(); // Used for first-user detection
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
     }
 
-    // ── Audit logs ───────────────────────────────────────────────────────────
+    // Audit logs (immutable)
     match /audit_logs/{logId} {
-      allow read:   if isAdminOrAbove();
+      allow read: if isAdminOrAbove();
       allow create: if isSignedIn();
-      allow update, delete: if false; // Immutable
+      allow update, delete: if false;
     }
   }
 }

@@ -1,53 +1,14 @@
 {
   "indexes": [
-    {
-      "collectionGroup": "tickets",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "status",      "order": "ASCENDING"  },
-        { "fieldPath": "createdAt",   "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "tickets",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "priority",    "order": "ASCENDING"  },
-        { "fieldPath": "createdAt",   "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "tickets",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "type",        "order": "ASCENDING"  },
-        { "fieldPath": "createdAt",   "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "tickets",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "requesterId", "order": "ASCENDING"  },
-        { "fieldPath": "createdAt",   "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "tickets",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "assigneeId",  "order": "ASCENDING"  },
-        { "fieldPath": "createdAt",   "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "tickets",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "ticketDate",  "order": "ASCENDING"  },
-        { "fieldPath": "type",        "order": "ASCENDING"  }
-      ]
-    }
+    { "collectionGroup": "tickets", "queryScope": "COLLECTION", "fields": [{"fieldPath": "requesterId","order": "ASCENDING"},{"fieldPath": "createdAt","order": "DESCENDING"}] },
+    { "collectionGroup": "tickets", "queryScope": "COLLECTION", "fields": [{"fieldPath": "assigneeId","order": "ASCENDING"},{"fieldPath": "createdAt","order": "DESCENDING"}] },
+    { "collectionGroup": "tickets", "queryScope": "COLLECTION", "fields": [{"fieldPath": "status","order": "ASCENDING"},{"fieldPath": "createdAt","order": "DESCENDING"}] },
+    { "collectionGroup": "tickets", "queryScope": "COLLECTION", "fields": [{"fieldPath": "priority","order": "ASCENDING"},{"fieldPath": "createdAt","order": "DESCENDING"}] },
+    { "collectionGroup": "tickets", "queryScope": "COLLECTION", "fields": [{"fieldPath": "status","order": "ASCENDING"},{"fieldPath": "priority","order": "ASCENDING"},{"fieldPath": "createdAt","order": "DESCENDING"}] },
+    { "collectionGroup": "assets",  "queryScope": "COLLECTION", "fields": [{"fieldPath": "type","order": "ASCENDING"},{"fieldPath": "createdAt","order": "DESCENDING"}] },
+    { "collectionGroup": "assets",  "queryScope": "COLLECTION", "fields": [{"fieldPath": "status","order": "ASCENDING"},{"fieldPath": "createdAt","order": "DESCENDING"}] },
+    { "collectionGroup": "assets",  "queryScope": "COLLECTION", "fields": [{"fieldPath": "assignedTo","order": "ASCENDING"},{"fieldPath": "createdAt","order": "DESCENDING"}] },
+    { "collectionGroup": "notifications", "queryScope": "COLLECTION", "fields": [{"fieldPath": "userId","order": "ASCENDING"},{"fieldPath": "read","order": "ASCENDING"}] }
   ],
   "fieldOverrides": []
 }

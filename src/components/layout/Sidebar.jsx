@@ -1,185 +1,159 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// NexDesk — Sidebar
-// Dynamic secondary nav based on active module, persona-filtered
+// NexDesk — Sidebar  v2.0
+// Phase 2: ITAM, Reports, Workflow added; all badges real
 // ─────────────────────────────────────────────────────────────────────────────
-import { useLocation, useNavigate } from 'react-router-dom'
-import {
-  LayoutDashboard, Ticket, Clock, BookOpen, ShoppingBag,
-  AlertTriangle, GitBranch, Package, RefreshCw, BarChart3,
-  Users, Settings, Shield, ChevronRight,
-} from 'lucide-react'
-import { useAuth } from '@/context/AuthContext'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
+import {
+  Home, Ticket, ChevronRight, LayoutDashboard, AlertTriangle,
+  Bug, GitBranch, ShoppingBag, Package, SlidersHorizontal,
+  Clock, BookOpen, Grid, Monitor, Cpu, Key, BarChart3,
+  Users, Shield, Settings, Zap, MessageCircle,
+} from 'lucide-react'
+import { useAuth }  from '@/context/AuthContext'
+import { ROLES }    from '@/lib/constants'
 import { db, collection, query, where, onSnapshot } from '@/lib/firebase'
-import { ROLES } from '@/lib/constants'
-import { PERMISSIONS } from '@/lib/constants'
 import clsx from 'clsx'
 
-// ── Sidebar configs per module ───────────────────────────────────────────────
-const SIDEBAR_CONFIGS = {
-  '/portal': {
-    title: 'Portal',
-    sections: [
-      {
-        items: [
-          { path: '/portal',            label: 'Home',           icon: LayoutDashboard },
-          { path: '/itsm/catalog',      label: 'Service Catalog', icon: ShoppingBag    },
-          { path: '/itsm/knowledge',    label: 'Knowledge Base',  icon: BookOpen       },
-          { path: '/itsm/tickets',      label: 'My Tickets',     icon: Ticket,  badge: true },
-          { path: '/notifications',     label: 'Notifications',  icon: Clock          },
-        ],
-      },
+// ── Sidebar nav structure per module ────────────────────────────────────────
+const MODULES = [
+  {
+    id: 'portal', label: 'Portal', icon: Home, path: '/portal',
+    roles: null, // all
+  },
+  {
+    id: 'itsm', label: 'ITSM', icon: Ticket, base: '/itsm', badge: true,
+    roles: null,
+    children: [
+      { label: 'Dashboard',       icon: LayoutDashboard, path: '/itsm',          end: true },
+      { label: 'Incidents',       icon: AlertTriangle,   path: '/itsm/tickets',  q: { type: 'INCIDENT' } },
+      { label: 'Problems',        icon: Bug,             path: '/itsm/tickets',  q: { type: 'PROBLEM'  } },
+      { label: 'Changes',         icon: GitBranch,       path: '/itsm/tickets',  q: { type: 'CHANGE'   } },
+      { label: 'Requests',        icon: ShoppingBag,     path: '/itsm/tickets',  q: { type: 'SERVICE_REQUEST' } },
+      { label: 'SLA Dashboard',   icon: Clock,           path: '/itsm/sla',      perm: 'VIEW_SLA_DASHBOARD' },
+      { label: 'Knowledge Base',  icon: BookOpen,        path: '/itsm/knowledge' },
+      { label: 'Service Catalog', icon: Grid,            path: '/itsm/catalog'   },
     ],
   },
+  {
+    id: 'itam', label: 'ITAM', icon: Monitor, base: '/itam',
+    roles: [ROLES.SUPER_ADMIN, ROLES.IT_ADMIN, ROLES.IT_AGENT, ROLES.MANAGER],
+    perm: 'ACCESS_ITAM',
+    children: [
+      { label: 'Dashboard',    icon: LayoutDashboard, path: '/itam',          end: true },
+      { label: 'All Assets',   icon: Cpu,             path: '/itam/assets'   },
+      { label: 'Add Asset',    icon: Package,         path: '/itam/assets/new', perm: 'MANAGE_ITAM' },
+    ],
+  },
+  {
+    id: 'reports', label: 'Reports', icon: BarChart3, path: '/reports',
+    roles: [ROLES.SUPER_ADMIN, ROLES.IT_ADMIN, ROLES.MANAGER, ROLES.IT_AGENT],
+    perm: 'VIEW_REPORTS',
+  },
+  {
+    id: 'admin', label: 'Admin', icon: Settings, base: '/admin',
+    roles: [ROLES.SUPER_ADMIN, ROLES.IT_ADMIN],
+    perm: 'ACCESS_ADMIN_PANEL',
+    children: [
+      { label: 'Users',      icon: Users,   path: '/admin/users'     },
+      { label: 'Roles',      icon: Shield,  path: '/admin/roles'     },
+      { label: 'Workflows',  icon: Zap,     path: '/admin/workflows', perm: 'MANAGE_WORKFLOWS' },
+      { label: 'Settings',   icon: Settings,path: '/admin/settings'  },
+    ],
+  },
+]
 
-  '/itsm': {
-    title: 'ITSM',
-    subtitle: 'IT Service Management',
-    sections: [
-      {
-        label: 'Operations',
-        items: [
-          { path: '/itsm/dashboard',   label: 'Dashboard',       icon: LayoutDashboard },
-          { path: '/itsm/tickets',     label: 'All Tickets',     icon: Ticket,  badge: true, permission: 'VIEW_ALL_TICKETS' },
-          { path: '/itsm/tickets?type=INCIDENT',      label: 'Incidents',   icon: AlertTriangle },
-          { path: '/itsm/tickets?type=PROBLEM',       label: 'Problems',    icon: RefreshCw     },
-          { path: '/itsm/tickets?type=CHANGE',        label: 'Changes',     icon: GitBranch     },
-          { path: '/itsm/tickets?type=SERVICE_REQUEST',label: 'Requests',   icon: Package       },
-        ],
-      },
-      {
-        label: 'Management',
-        items: [
-          { path: '/itsm/sla',         label: 'SLA Management',  icon: Clock,   permission: 'VIEW_SLA_DASHBOARD' },
-          { path: '/itsm/catalog',     label: 'Service Catalog', icon: ShoppingBag },
-          { path: '/itsm/knowledge',   label: 'Knowledge Base',  icon: BookOpen },
-          { path: '/itsm/reports',     label: 'Reports',         icon: BarChart3, permission: 'VIEW_TEAM_REPORTS' },
-        ],
-      },
-    ],
-  },
-
-  '/admin': {
-    title: 'Administration',
-    subtitle: 'Platform Management',
-    sections: [
-      {
-        label: 'Admin',
-        items: [
-          { path: '/admin/users',    label: 'Users',       icon: Users,    permission: 'MANAGE_USERS' },
-          { path: '/admin/roles',    label: 'Roles',       icon: Shield,   permission: 'ASSIGN_ROLES' },
-          { path: '/admin/settings', label: 'Settings',    icon: Settings, permission: 'MANAGE_SETTINGS' },
-        ],
-      },
-    ],
-  },
+function NavItem({ icon: Icon, label, path, end, active, badge }) {
+  return (
+    <NavLink to={path} end={end}
+      className={({ isActive }) => clsx(
+        'flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs transition-all duration-150 group',
+        isActive || active ? 'font-medium' : 'font-normal opacity-70 hover:opacity-100 hover:bg-[var(--bg-hover)]'
+      )}
+      style={({ isActive }) => isActive || active
+        ? { background: 'var(--accent)', color: '#fff' }
+        : { color: 'var(--text-secondary)' }
+      }
+    >
+      <Icon size={13} className="flex-shrink-0" />
+      <span className="flex-1 truncate">{label}</span>
+      {badge > 0 && (
+        <span className="ml-auto px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-red-500 text-white">
+          {badge > 99 ? '99+' : badge}
+        </span>
+      )}
+    </NavLink>
+  )
 }
 
-export default function Sidebar() {
-  const location  = useLocation()
-  const navigate  = useNavigate()
-  const { can, profile, role }   = useAuth()
+export default function Sidebar({ collapsed }) {
+  const location = useLocation()
+  const { can, role, profile } = useAuth()
+  const [expanded, setExpanded] = useState({ itsm: true })
   const [openTickets, setOpenTickets] = useState(0)
 
+  // Real-time open ticket badge
   useEffect(() => {
     if (!profile?.uid) return
-    const constraints = [where('status', 'in', ['NEW', 'OPEN', 'ASSIGNED', 'IN_PROGRESS'])]
+    const constraints = [where('status', 'in', ['NEW','OPEN','ASSIGNED','IN_PROGRESS'])]
     if (role === ROLES.USER) constraints.push(where('requesterId', '==', profile.uid))
     const q = query(collection(db, 'tickets'), ...constraints)
-    return onSnapshot(q, snap => setOpenTickets(snap.size), () => {})
+    return onSnapshot(q, s => setOpenTickets(s.size), () => {})
   }, [profile?.uid, role])
 
-  // Match config by current path prefix
-  const base   = '/' + location.pathname.split('/')[1]
-  const config = SIDEBAR_CONFIGS[base] ?? SIDEBAR_CONFIGS['/portal']
+  // Auto-expand active module
+  useEffect(() => {
+    const seg = location.pathname.split('/')[1]
+    if (seg) setExpanded(p => ({ ...p, [seg]: true }))
+  }, [location.pathname])
 
-  const isActive = (path) => {
-    const bare = path.split('?')[0]
-    if (bare === '/portal' && location.pathname === '/portal') return true
-    if (bare !== '/portal' && location.pathname.startsWith(bare) && bare !== '/') return true
-    return false
-  }
+  if (collapsed) return null
 
   return (
-    <div
-      className="h-full flex flex-col overflow-hidden"
-      style={{
-        background:   'var(--bg-surface)',
-        borderRight:  '1px solid var(--border-subtle)',
-        width:        220,
-      }}
-    >
-      {/* Header */}
-      <div
-        className="flex items-center gap-2 px-3.5 py-3 flex-shrink-0"
-        style={{ borderBottom: '1px solid var(--border-subtle)', height: 52 }}
-      >
-        <div>
-          <p className="text-xs font-semibold leading-tight" style={{ color: 'var(--text-primary)' }}>
-            {config.title}
-          </p>
-          {config.subtitle && (
-            <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
-              {config.subtitle}
-            </p>
-          )}
-        </div>
-      </div>
+    <nav className="h-full overflow-y-auto py-4 px-2 space-y-0.5">
+      {MODULES.map(mod => {
+        // Role check
+        if (mod.roles && !mod.roles.includes(role)) return null
+        if (mod.perm  && !can(mod.perm))             return null
 
-      {/* Nav sections */}
-      <nav className="flex-1 overflow-y-auto py-2 px-2">
-        {config.sections.map((section, si) => (
-          <div key={si} className="mb-4">
-            {section.label && (
-              <p
-                className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider mb-1"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                {section.label}
-              </p>
+        const isBase = mod.base && location.pathname.startsWith(mod.base)
+
+        if (!mod.children) {
+          // Flat link
+          return <NavItem key={mod.id} icon={mod.icon} label={mod.label} path={mod.path} end={mod.id === 'portal'} />
+        }
+
+        return (
+          <div key={mod.id}>
+            {/* Module header */}
+            <button
+              onClick={() => setExpanded(p => ({ ...p, [mod.id]: !p[mod.id] }))}
+              className={clsx(
+                'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs transition-all duration-150',
+                isBase ? 'font-semibold' : 'font-medium opacity-70 hover:opacity-100 hover:bg-[var(--bg-hover)]'
+              )}
+              style={{ color: isBase ? 'var(--text-primary)' : 'var(--text-muted)' }}
+            >
+              <mod.icon size={13} className="flex-shrink-0" />
+              <span className="flex-1 text-left">{mod.label}</span>
+              {mod.id === 'itsm' && openTickets > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-red-500 text-white">{openTickets > 99 ? '99+' : openTickets}</span>
+              )}
+              <ChevronRight size={11} style={{ transform: expanded[mod.id] ? 'rotate(90deg)' : 'none', transition: '0.2s' }} />
+            </button>
+
+            {/* Children */}
+            {expanded[mod.id] && (
+              <div className="ml-3 pl-2 mt-0.5 space-y-0.5" style={{ borderLeft: '1px solid var(--border-subtle)' }}>
+                {mod.children
+                  .filter(c => !c.perm || can(c.perm))
+                  .map(c => <NavItem key={c.path + (c.q ? JSON.stringify(c.q) : '')} icon={c.icon} label={c.label} path={c.path} end={c.end} />)
+                }
+              </div>
             )}
-
-            {section.items.map((item) => {
-              // Filter by permission
-              if (item.permission && !can(item.permission)) return null
-
-              const active = isActive(item.path)
-
-              return (
-                <button
-                  key={item.path}
-                  onClick={() => navigate(item.path)}
-                  className={clsx(
-                    'nd-nav-item w-full text-left mb-0.5',
-                    active && 'active',
-                  )}
-                >
-                  <item.icon size={14} className="flex-shrink-0" />
-                  <span className="flex-1 text-[13px]">{item.label}</span>
-                  {item.badge && openTickets > 0 && (
-                    <span className="ml-auto px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-red-500 text-white">
-                      {openTickets > 99 ? '99+' : openTickets}
-                    </span>
-                  )}
-                  {active && !item.badge && (
-                    <ChevronRight size={12} className="ml-auto opacity-40" />
-                  )}
-                </button>
-              )
-            })}
           </div>
-        ))}
-      </nav>
-
-      {/* Footer */}
-      <div
-        className="px-3 py-2.5 flex-shrink-0"
-        style={{ borderTop: '1px solid var(--border-subtle)' }}
-      >
-        <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-          NexDesk v1.0.0 · Phase 1
-        </p>
-      </div>
-    </div>
+        )
+      })}
+    </nav>
   )
 }
