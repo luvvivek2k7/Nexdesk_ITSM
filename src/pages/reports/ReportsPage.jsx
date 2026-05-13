@@ -141,10 +141,10 @@ export default function ReportsPage() {
 
       {/* KPI Row */}
       <div className="grid grid-cols-4 gap-3">
-        <StatCard title="Tickets Created"  value={kpi.total}    icon={BarChart3}     color="blue"   />
-        <StatCard title="Resolved"          value={kpi.resolved} icon={CheckCircle}   color="green"  />
-        <StatCard title="SLA Breached"      value={kpi.breached} icon={AlertTriangle} color={kpi.breached > 0 ? 'red' : 'gray'} />
-        <StatCard title="SLA Compliance"    value={`${slaStats.compliance}%`} icon={TrendingUp} color={slaStats.compliance >= 90 ? 'green' : slaStats.compliance >= 75 ? 'amber' : 'red'} />
+        <StatCard label="Tickets Created"  value={kpi.total}    icon={BarChart3}     color="blue"   />
+        <StatCard label="Resolved"          value={kpi.resolved} icon={CheckCircle}   color="green"  />
+        <StatCard label="SLA Breached"      value={kpi.breached} icon={AlertTriangle} color={kpi.breached > 0 ? 'red' : 'gray'} />
+        <StatCard label="SLA Compliance"    value={`${slaStats.compliance}%`} icon={TrendingUp} color={slaStats.compliance >= 90 ? 'green' : slaStats.compliance >= 75 ? 'amber' : 'red'} />
       </div>
 
       {/* Trend Chart */}

@@ -21,7 +21,7 @@ export default function AssetFormPage() {
   const { id }    = useParams()
   const navigate  = useNavigate()
   const { user, profile } = useAuth()
-  const isEdit    = Boolean(id)
+  const isEdit    = Boolean(id) && id !== 'new'
   const [form,    setForm]    = useState(EMPTY)
   const [loading, setLoading] = useState(isEdit)
   const [saving,  setSaving]  = useState(false)

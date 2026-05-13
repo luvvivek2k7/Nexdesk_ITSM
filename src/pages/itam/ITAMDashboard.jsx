@@ -63,10 +63,10 @@ export default function ITAMDashboard() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 gap-3" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
-        <StatCard title="Total Assets"  value={stats?.total ?? '—'}    icon={Monitor}      color="blue"   />
-        <StatCard title="Active Assets" value={stats?.active ?? '—'}   icon={Cpu}          color="green"  />
-        <StatCard title="Total Value"   value={stats ? fmt(stats.totalCost) : '—'} icon={DollarSign} color="violet" />
-        <StatCard title="Expiring (30d)"value={stats?.expiringSoon ?? '—'} icon={AlertTriangle} color={stats?.expiringSoon > 0 ? 'red' : 'gray'} />
+        <StatCard label="Total Assets"  value={stats?.total ?? '—'}    icon={Monitor}      color="blue"   />
+        <StatCard label="Active Assets" value={stats?.active ?? '—'}   icon={Cpu}          color="green"  />
+        <StatCard label="Total Value"   value={stats ? fmt(stats.totalCost) : '—'} icon={DollarSign} color="violet" />
+        <StatCard label="Expiring (30d)"value={stats?.expiringSoon ?? '—'} icon={AlertTriangle} color={stats?.expiringSoon > 0 ? 'red' : 'gray'} />
       </div>
 
       {/* Charts row */}
@@ -126,7 +126,7 @@ export default function ITAMDashboard() {
       {/* Recent Assets */}
       <Card padding={false}>
         <div className="p-4 pb-0">
-          <CardHeader title="Recent Assets" action={<Button size="sm" variant="ghost" onClick={() => navigate('/itam/assets')}>View All</Button>} />
+          <CardHeader title="Recent Assets" actions={<Button size="sm" variant="ghost" onClick={() => navigate('/itam/assets')}>View All</Button>} />
         </div>
         <div className="overflow-x-auto">
           <table className="nd-table">

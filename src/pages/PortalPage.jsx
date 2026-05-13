@@ -22,7 +22,7 @@ import { formatDistanceToNow } from 'date-fns'
 // ── Module cards data ─────────────────────────────────────────────────────────
 const MODULE_CARDS = [
   { id:'itsm',    label:'ITSM',           icon:'🎫', path:'/itsm',    color:'blue',   phase:1, desc:'Incidents, requests, SLA'    },
-  { id:'itam',    label:'ITAM',           icon:'🖥',  path:'/itam',   color:'cyan',   phase:2, desc:'Assets, CMDB, lifecycle'      },
+  { id:'itam',    label:'ITAM',           icon:'🖥',  path:'/itam',   color:'cyan',   phase:2, status:'live', desc:'Assets, CMDB, lifecycle'      },
   { id:'iam',     label:'IAM',            icon:'🔐', path:'/iam',     color:'violet', phase:2, desc:'Access governance, approvals'  },
   { id:'hrms',    label:'HRMS',           icon:'👥', path:'/hrms',    color:'green',  phase:3, desc:'People, onboarding, leave'     },
   { id:'fso',     label:'Field Services', icon:'🔧', path:'/fso',     color:'amber',  phase:2, desc:'Dispatch, work orders, map'    },
@@ -93,14 +93,16 @@ export default function PortalPage() {
   const isManager = role === ROLES.MANAGER
 
   useEffect(() => {
+    if (!profile) return  // wait for profile before subscribing
     const filters = {}
-    if (role === ROLES.USER) filters.requesterId = profile?.uid
-    const unsub = listenToTickets(filters, (data) => {
-      setTickets(data)
-      setLoading(false)
-    })
+    if (role === ROLES.USER) filters.requesterId = profile.uid ?? profile.id
+    const unsub = listenToTickets(
+      filters,
+      (data) => { setTickets(data); setLoading(false) },
+      (err)  => { console.error('Portal ticket listener:', err); setLoading(false) }
+    )
     return unsub
-  }, [role, profile?.uid])
+  }, [role, profile?.uid, profile?.id])
 
   // Computed stats
   const open     = tickets.filter(t => ['NEW','OPEN','ASSIGNED','IN_PROGRESS'].includes(t.status))

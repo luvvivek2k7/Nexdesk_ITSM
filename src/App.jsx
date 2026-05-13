@@ -21,9 +21,9 @@ import ITSMDashboard   from '@/pages/itsm/ITSMDashboard'
 import TicketListPage  from '@/pages/itsm/TicketListPage'
 import NewTicketPage   from '@/pages/itsm/NewTicketPage'
 import TicketDetailPage from '@/pages/itsm/TicketDetailPage'
-import SLADashboard    from '@/pages/itsm/SLADashboard'
+import SLADashboard    from '@/pages/itsm/SLAManagementPage'
 import KnowledgePage   from '@/pages/itsm/KnowledgePage'
-import ServiceCatalog  from '@/pages/itsm/ServiceCatalog'
+import ServiceCatalog  from '@/pages/itsm/ServiceCatalogPage'
 
 // ITAM  (Phase 2)
 import ITAMLayout      from '@/pages/itam/ITAMLayout'
