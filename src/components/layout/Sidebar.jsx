@@ -58,6 +58,7 @@ const MODULES = [
       { label: 'Users',      icon: Users,   path: '/admin/users'     },
       { label: 'Roles',      icon: Shield,  path: '/admin/roles'     },
       { label: 'Workflows',  icon: Zap,     path: '/admin/workflows', perm: 'MANAGE_WORKFLOWS' },
+      { label: 'Assignment Groups', icon: Users, path: '/admin/groups', perm: 'MANAGE_USERS' },
       { label: 'Settings',   icon: Settings,path: '/admin/settings'  },
     ],
   },

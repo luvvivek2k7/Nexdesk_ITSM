@@ -71,6 +71,13 @@ service cloud.firestore {
       allow write: if isSignedIn();
     }
 
+    // Assignment Groups
+    match /assignment_groups/{groupId} {
+      allow read: if isAgentOrAbove() || isManagerOrAbove();
+      allow create, update: if isAdminOrAbove();
+      allow delete: if isAdminOrAbove();
+    }
+
     // Invites — created by admins, read by invited user via token email match
     match /invites/{email} {
       allow read: if isAdminOrAbove()

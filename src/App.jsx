@@ -41,6 +41,7 @@ import UsersPage     from '@/pages/admin/UsersPage'
 import RolesPage     from '@/pages/admin/RolesPage'
 import SettingsPage  from '@/pages/admin/SettingsPage'
 import WorkflowPage  from '@/pages/admin/WorkflowPage'
+import AssignmentGroupsPage from '@/pages/admin/AssignmentGroupsPage'
 
 // User
 import ProfilePage from '@/pages/user/ProfilePage'
@@ -99,6 +100,7 @@ export default function App() {
                 <Route path="users"     element={<UsersPage />} />
                 <Route path="roles"     element={<RolesPage />} />
                 <Route path="workflows" element={<WorkflowPage />} />
+                <Route path="groups" element={<AssignmentGroupsPage />} />
                 <Route path="settings"  element={<SettingsPage />} />
               </Route>
 
