@@ -4,158 +4,48 @@
       "collectionGroup": "tickets",
       "queryScope": "COLLECTION",
       "fields": [
-        {
-          "fieldPath": "requesterId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
-        }
+        { "fieldPath": "requesterId", "order": "ASCENDING"  },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
       ]
     },
     {
       "collectionGroup": "tickets",
       "queryScope": "COLLECTION",
       "fields": [
-        {
-          "fieldPath": "assigneeId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
-        }
+        { "fieldPath": "assigneeId",  "order": "ASCENDING"  },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
       ]
     },
     {
       "collectionGroup": "tickets",
       "queryScope": "COLLECTION",
       "fields": [
-        {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
-        }
+        { "fieldPath": "status",      "order": "ASCENDING"  },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
       ]
     },
     {
       "collectionGroup": "tickets",
       "queryScope": "COLLECTION",
       "fields": [
-        {
-          "fieldPath": "priority",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
-        }
+        { "fieldPath": "priority",    "order": "ASCENDING"  },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
       ]
     },
     {
       "collectionGroup": "tickets",
       "queryScope": "COLLECTION",
       "fields": [
-        {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "priority",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
-        }
+        { "fieldPath": "ticketDate",  "order": "ASCENDING"  },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
       ]
     },
     {
-      "collectionGroup": "assets",
+      "collectionGroup": "tickets",
       "queryScope": "COLLECTION",
       "fields": [
-        {
-          "fieldPath": "type",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "assets",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "assets",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "assignedTo",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "notifications",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "userId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "read",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "assignment_groups",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "active",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "name",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "notifications",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "userId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
-        }
+        { "fieldPath": "slaBreached", "order": "ASCENDING"  },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
       ]
     }
   ],

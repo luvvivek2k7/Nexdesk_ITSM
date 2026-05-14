@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// NexDesk — Icon Navigation Rail
-// Leftmost fixed rail with module icons, persona avatar, theme toggle
+// NexDesk — Icon Nav Rail (FIXED v2)
+// Phase 2 modules now enabled. Role-based visibility. Correct active detection.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
@@ -9,11 +9,9 @@ import {
   Crown, Headphones, BarChart3, Code2, Wrench, User,
 } from 'lucide-react'
 import { useAuth }  from '@/context/AuthContext'
-import { useState, useEffect } from 'react'
-import { db, collection, query, where, onSnapshot } from '@/lib/firebase'
 import { useTheme } from '@/context/ThemeContext'
 import { ROLES }    from '@/lib/constants'
-import clsx from 'clsx'
+import clsx         from 'clsx'
 
 const ROLE_ICONS = {
   [ROLES.SUPER_ADMIN]:    Crown,
@@ -26,14 +24,39 @@ const ROLE_ICONS = {
   [ROLES.USER]:           User,
 }
 
+// Each module: which roles can access it
 const NAV_ITEMS = [
-  { path: '/portal',      icon: Home,      label: 'Portal',         phase: 1 },
-  { path: '/itsm',        icon: Ticket,    label: 'ITSM',           phase: 1, badge: true },
-  { path: '/itam',        icon: Monitor,   label: 'ITAM',           phase: 2 },
-  { path: '/iam',         icon: Shield,    label: 'IAM',            phase: 2 },
-  { path: '/hrms',        icon: Users,     label: 'HRMS',           phase: 3 },
-  { path: '/fso',         icon: MapPin,    label: 'Field Services', phase: 2 },
-  { path: '/visitor',     icon: Building2, label: 'Visitor',        phase: 2 },
+  {
+    path: '/portal', icon: Home, label: 'Portal',
+    roles: null, // everyone
+  },
+  {
+    path: '/itsm', icon: Ticket, label: 'ITSM',
+    roles: null, // everyone
+    badge: true,
+  },
+  {
+    path: '/itam', icon: Monitor, label: 'ITAM',
+    roles: [ROLES.SUPER_ADMIN, ROLES.IT_ADMIN, ROLES.IT_AGENT, ROLES.MANAGER],
+  },
+  {
+    path: '/iam', icon: Shield, label: 'IAM',
+    roles: [ROLES.SUPER_ADMIN, ROLES.IT_ADMIN, ROLES.MANAGER],
+    badge: true,
+  },
+  {
+    path: '/hrms', icon: Users, label: 'HRMS',
+    roles: [ROLES.SUPER_ADMIN, ROLES.IT_ADMIN, ROLES.HR, ROLES.MANAGER],
+  },
+  {
+    path: '/fso', icon: MapPin, label: 'Field Services',
+    roles: [ROLES.SUPER_ADMIN, ROLES.IT_ADMIN, ROLES.FIELD_ENGINEER, ROLES.MANAGER],
+  },
+  {
+    path: '/visitor', icon: Building2, label: 'Visitor Mgmt',
+    roles: [ROLES.SUPER_ADMIN, ROLES.IT_ADMIN, ROLES.MANAGER],
+    badge: true,
+  },
 ]
 
 export default function IconNav({ onToggleSidebar }) {
@@ -43,25 +66,20 @@ export default function IconNav({ onToggleSidebar }) {
   const { isDark, toggleTheme } = useTheme()
 
   const currentBase = '/' + (location.pathname.split('/')[1] || '')
-  const RoleIcon = ROLE_ICONS[profile?.role] ?? User
-  const [notifCount, setNotifCount] = useState(0)
+  const RoleIcon    = ROLE_ICONS[profile?.role] ?? User
+  const userRole    = profile?.role
 
-  useEffect(() => {
-    if (!profile?.uid) return
-    const q = query(
-      collection(db, 'notifications'),
-      where('userId', '==', profile.uid),
-      where('read', '==', false)
-    )
-    return onSnapshot(q, snap => setNotifCount(snap.size), () => {})
-  }, [profile?.uid])
+  // Filter nav items by role
+  const visibleItems = NAV_ITEMS.filter(item =>
+    !item.roles || (userRole && item.roles.includes(userRole))
+  )
 
   return (
     <nav
-      className="flex flex-col items-center py-3 gap-1 flex-shrink-0 z-20"
+      className="flex flex-col items-center py-3 gap-0.5 flex-shrink-0 z-20"
       style={{
         width: 52,
-        background: 'var(--bg-surface)',
+        background:  'var(--bg-surface)',
         borderRight: '1px solid var(--border-subtle)',
       }}
     >
@@ -76,110 +94,121 @@ export default function IconNav({ onToggleSidebar }) {
       </div>
 
       {/* Hamburger */}
-      <IconBtn icon={Menu} onClick={onToggleSidebar} label="Toggle sidebar" />
+      <button
+        onClick={onToggleSidebar}
+        className="w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-150"
+        style={{ color: 'var(--text-muted)' }}
+        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+        title="Toggle sidebar"
+      >
+        <Menu size={16} />
+      </button>
 
       <div className="w-6 h-px my-1" style={{ background: 'var(--border-subtle)' }} />
 
       {/* Module nav */}
-      {NAV_ITEMS.map(item => {
-        const active  = currentBase === item.path ||
-                        (item.path !== '/portal' && location.pathname.startsWith(item.path))
-        const planned = item.phase > 1
+      {visibleItems.map(item => {
+        const isActive = currentBase === item.path ||
+          (item.path !== '/portal' && location.pathname.startsWith(item.path))
 
         return (
           <div key={item.path} className="relative group">
             <button
-              onClick={() => planned ? null : navigate(item.path)}
-              className={clsx(
-                'w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-150',
-                active && 'text-blue-400',
-                !active && !planned && 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]',
-                planned && 'text-[var(--text-disabled)] cursor-not-allowed opacity-50',
-              )}
-              style={active ? { background: 'var(--accent-subtle)', color: 'var(--accent)' } : {}}
+              onClick={() => navigate(item.path)}
+              className="w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-150 relative"
+              style={isActive
+                ? { background: 'var(--accent-subtle)', color: 'var(--accent)' }
+                : { color: 'var(--text-muted)' }
+              }
+              onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'var(--bg-hover)' }}
+              onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent' }}
               title={item.label}
             >
               <item.icon size={17} />
-              {/* Phase badge for planned */}
-              {planned && (
-                <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-[var(--bg-hover)] border border-[var(--border-default)] flex items-center justify-center text-[8px] text-[var(--text-muted)]">
-                  {item.phase}
-                </span>
+              {item.badge && (
+                <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-red-500" />
               )}
             </button>
 
             {/* Tooltip */}
-            <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 px-2 py-1 rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-50 transition-opacity duration-150"
-              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
+            <div
+              className="absolute left-full ml-2 top-1/2 -translate-y-1/2 px-2.5 py-1.5 rounded-lg text-xs
+                         whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-50
+                         transition-opacity duration-150"
+              style={{
+                background: 'var(--bg-elevated)',
+                border:     '1px solid var(--border-default)',
+                color:      'var(--text-primary)',
+                boxShadow:  '0 4px 12px rgba(0,0,0,0.3)',
+              }}
             >
               {item.label}
-              {planned && <span className="ml-1 text-[var(--text-muted)]">(Phase {item.phase})</span>}
             </div>
           </div>
         )
       })}
 
       {/* Bottom actions */}
-      <div className="mt-auto flex flex-col items-center gap-1">
+      <div className="mt-auto flex flex-col items-center gap-0.5">
         <div className="w-6 h-px mb-1" style={{ background: 'var(--border-subtle)' }} />
 
         {/* Theme toggle */}
         <button
           onClick={toggleTheme}
-          className="w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-150 text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
-          title={isDark ? 'Switch to Light' : 'Switch to Dark'}
+          className="w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-150"
+          style={{ color: 'var(--text-muted)' }}
+          onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          title={isDark ? 'Light mode' : 'Dark mode'}
         >
-          {isDark ? <Sun size={16} /> : <Moon size={16} />}
+          {isDark ? <Sun size={15} /> : <Moon size={15} />}
         </button>
 
         {/* Notifications */}
         <button
           onClick={() => navigate('/notifications')}
-          className="relative w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-150 text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+          className="relative w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-150"
+          style={{ color: 'var(--text-muted)' }}
+          onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
           title="Notifications"
         >
-          <Bell size={16} />
-          {notifCount > 0 && (
-            <span className="absolute top-1 right-1 min-w-[14px] h-3.5 rounded-full bg-red-500 flex items-center justify-center text-[9px] text-white font-bold px-0.5">
-              {notifCount > 9 ? '9+' : notifCount}
-            </span>
-          )}
+          <Bell size={15} />
+          <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-red-500" />
         </button>
 
-        {/* Settings */}
-        <button
-          onClick={() => navigate('/admin/settings')}
-          className="w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-150 text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
-          title="Settings"
-        >
-          <Settings size={16} />
-        </button>
+        {/* Admin settings — only for admins */}
+        {[ROLES.SUPER_ADMIN, ROLES.IT_ADMIN].includes(userRole) && (
+          <button
+            onClick={() => navigate('/admin/settings')}
+            className="w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-150"
+            style={{
+              color:      currentBase === '/admin' ? 'var(--accent)' : 'var(--text-muted)',
+              background: currentBase === '/admin' ? 'var(--accent-subtle)' : 'transparent',
+            }}
+            onMouseEnter={e => { if (currentBase !== '/admin') e.currentTarget.style.background = 'var(--bg-hover)' }}
+            onMouseLeave={e => { if (currentBase !== '/admin') e.currentTarget.style.background = 'transparent' }}
+            title="Admin Settings"
+          >
+            <Settings size={15} />
+          </button>
+        )}
 
         {/* Avatar */}
         <button
           onClick={() => navigate('/profile')}
-          className="w-8 h-8 rounded-full flex items-center justify-center mt-1 transition-all duration-150 hover:ring-2 ring-blue-500/40"
-          style={{ background: 'linear-gradient(135deg,#3b62f5,#7c3aed)' }}
+          className="w-8 h-8 rounded-full flex items-center justify-center mt-1 overflow-hidden
+                     transition-all duration-150 hover:ring-2 ring-blue-500/40"
+          style={{ background: 'linear-gradient(135deg,#3b62f5,#7c3aed)', flexShrink: 0 }}
           title={`${profile?.displayName ?? 'Profile'} (${profile?.role ?? ''})`}
         >
           {profile?.photoURL
-            ? <img src={profile.photoURL} alt="avatar" className="w-full h-full rounded-full object-cover" />
+            ? <img src={profile.photoURL} alt="avatar" className="w-full h-full object-cover" />
             : <RoleIcon size={14} className="text-white" />
           }
         </button>
       </div>
     </nav>
-  )
-}
-
-function IconBtn({ icon: Icon, onClick, label }) {
-  return (
-    <button
-      onClick={onClick}
-      className="w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-150 text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
-      title={label}
-    >
-      <Icon size={16} />
-    </button>
   )
 }

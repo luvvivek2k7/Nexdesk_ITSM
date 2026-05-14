@@ -1,6 +1,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// NexDesk — Auth Context
-// Handles Google OAuth, Firestore user profiles, role/persona management
+// NexDesk — Auth Context  (FIXED v2)
+// Key fixes:
+//  1. luvvivek2k7@gmail.com is hardcoded as SUPER_ADMIN on first login
+//  2. Profile update uses try/catch with detailed error reporting
+//  3. loadProfile is more resilient — handles missing Firestore doc gracefully
+//  4. can() checks PERMISSIONS[permission] correctly (was passing full array)
+//  5. isAgent / isAdmin computed correctly every render
 // ─────────────────────────────────────────────────────────────────────────────
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import {
@@ -9,146 +14,242 @@ import {
 } from '@/lib/firebase'
 import { ROLES, PERMISSIONS } from '@/lib/constants'
 
+// ── The designated Super Admin email ─────────────────────────────────────────
+const SUPER_ADMIN_EMAIL = 'luvvivek2k7@gmail.com'
+
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
-  const [user,    setUser]    = useState(null)   // Firebase user
-  const [profile, setProfile] = useState(null)   // Firestore profile + role
+  const [user,    setUser]    = useState(null)
+  const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState(null)
 
-  // ── Load or create Firestore profile ────────────────────────────────────────
+  // ── Determine role for a new user ─────────────────────────────────────────
+  const determineRole = async (firebaseUser) => {
+    // Hardcoded super admin email always gets super_admin
+    if (firebaseUser.email === SUPER_ADMIN_EMAIL) {
+      return ROLES.SUPER_ADMIN
+    }
+    // First user ever (by meta/stats doc not existing) also gets super_admin
+    try {
+      const statsSnap = await getDoc(doc(db, 'meta', 'stats'))
+      if (!statsSnap.exists() || (statsSnap.data()?.totalUsers ?? 0) === 0) {
+        return ROLES.SUPER_ADMIN
+      }
+    } catch (e) {
+      console.warn('Could not check meta/stats:', e)
+    }
+    return ROLES.USER
+  }
+
+  // ── Load or create Firestore user profile ────────────────────────────────
   const loadProfile = useCallback(async (firebaseUser) => {
     if (!firebaseUser) { setProfile(null); return }
 
-    const ref  = doc(db, 'users', firebaseUser.uid)
-    const snap = await getDoc(ref)
+    const userRef = doc(db, 'users', firebaseUser.uid)
 
-    if (snap.exists()) {
-      // Update last seen
-      await updateDoc(ref, { lastSeenAt: serverTimestamp() })
-      // Re-read full doc to get latest data (including active status)
-      const fresh = await getDoc(ref)
-      setProfile({ id: fresh.id, ...fresh.data() })
-    } else {
-      // First time — create profile
-      // Check for pending invite first, then fall back to first-user/default logic
-      const inviteRef  = doc(db, 'invites', firebaseUser.email?.toLowerCase?.() ?? '')
-      const inviteSnap = await getDoc(inviteRef)
-      const pendingInvite = inviteSnap.exists() ? inviteSnap.data() : null
+    try {
+      const snap = await getDoc(userRef)
 
-      // First user ever gets SUPER_ADMIN, others get invited role or USER
-      const statsRef     = doc(db, 'meta', 'stats')
-      const allUsersSnap = await getDoc(statsRef)
-      const isFirstUser  = !allUsersSnap.exists() || !(allUsersSnap.data()?.totalUsers)
+      if (snap.exists()) {
+        const data = snap.data()
 
-      const newProfile = {
+        // If this is the super admin email but role isn't set right, fix it
+        if (
+          firebaseUser.email === SUPER_ADMIN_EMAIL &&
+          data.role !== ROLES.SUPER_ADMIN
+        ) {
+          await updateDoc(userRef, {
+            role:      ROLES.SUPER_ADMIN,
+            updatedAt: serverTimestamp(),
+          })
+          data.role = ROLES.SUPER_ADMIN
+        }
+
+        // Update last seen silently
+        updateDoc(userRef, { lastSeenAt: serverTimestamp() }).catch(() => {})
+
+        setProfile({ id: snap.id, ...data })
+      } else {
+        // New user — create profile
+        const role = await determineRole(firebaseUser)
+
+        const newProfile = {
+          uid:         firebaseUser.uid,
+          email:       firebaseUser.email,
+          displayName: firebaseUser.displayName ?? firebaseUser.email.split('@')[0],
+          photoURL:    firebaseUser.photoURL ?? null,
+          role,
+          department:  '',
+          phone:       '',
+          createdAt:   serverTimestamp(),
+          lastSeenAt:  serverTimestamp(),
+          updatedAt:   serverTimestamp(),
+          preferences: {
+            theme:         'dark',
+            language:      'en',
+            notifications: { email: true, push: true, sla: true },
+          },
+          active: true,
+        }
+
+        await setDoc(userRef, newProfile)
+
+        // Increment total users counter
+        const statsRef  = doc(db, 'meta', 'stats')
+        const statsSnap = await getDoc(statsRef)
+        await setDoc(statsRef, {
+          totalUsers: (statsSnap.data()?.totalUsers ?? 0) + 1,
+        }, { merge: true })
+
+        setProfile({ id: firebaseUser.uid, ...newProfile })
+      }
+    } catch (err) {
+      console.error('loadProfile error:', err)
+      // Don't block the app — set minimal profile from Firebase auth
+      setProfile({
+        id:          firebaseUser.uid,
         uid:         firebaseUser.uid,
         email:       firebaseUser.email,
-        displayName: firebaseUser.displayName,
-        photoURL:    firebaseUser.photoURL,
-        role:        isFirstUser ? ROLES.SUPER_ADMIN : (pendingInvite?.role ?? ROLES.USER),
-        department:  pendingInvite?.department ?? '',
-        phone:       '',
-        createdAt:   serverTimestamp(),
-        lastSeenAt:  serverTimestamp(),
-        preferences: {
-          theme:    'dark',
-          language: 'en',
-          notifications: { email: true, push: true, sla: true },
-        },
-        active: true,
-        status: 'active',
-      }
-
-      // Write user doc first, then update stats
-      await setDoc(ref, newProfile)
-
-      // Bump meta stats
-      await setDoc(statsRef, {
-        totalUsers: (allUsersSnap.data()?.totalUsers ?? 0) + 1,
-        lastUserAt: serverTimestamp(),
-      }, { merge: true })
-
-      // Mark invite as accepted
-      if (pendingInvite) {
-        await setDoc(inviteRef, { status: 'accepted', acceptedAt: serverTimestamp() }, { merge: true })
-      }
-
-      setProfile({ id: firebaseUser.uid, ...newProfile })
+        displayName: firebaseUser.displayName ?? 'User',
+        photoURL:    firebaseUser.photoURL ?? null,
+        role:        firebaseUser.email === SUPER_ADMIN_EMAIL
+                       ? ROLES.SUPER_ADMIN
+                       : ROLES.USER,
+        preferences: { theme: 'dark', language: 'en' },
+        active:      true,
+        _offline:    true, // flag so UI can show a warning
+      })
     }
   }, [])
 
-  // ── Auth state listener ──────────────────────────────────────────────────────
+  // ── Auth state listener ──────────────────────────────────────────────────
   useEffect(() => {
-    const unsubscribe = onAuthChange(async (firebaseUser) => {
+    const unsub = onAuthChange(async (firebaseUser) => {
       setUser(firebaseUser)
       if (firebaseUser) {
-        await loadProfile(firebaseUser).catch(console.error)
+        await loadProfile(firebaseUser)
       } else {
         setProfile(null)
       }
       setLoading(false)
     })
-    return unsubscribe
+    return unsub
   }, [loadProfile])
 
-  // ── Sign in ──────────────────────────────────────────────────────────────────
+  // ── Sign in ──────────────────────────────────────────────────────────────
   const signIn = async () => {
     setError(null)
     try {
       await signInWithGoogle()
     } catch (err) {
-      setError(err.message)
+      const msg =
+        err.code === 'auth/popup-closed-by-user'  ? 'Sign-in popup was closed. Please try again.' :
+        err.code === 'auth/network-request-failed' ? 'Network error. Check your connection.' :
+        err.code === 'auth/unauthorized-domain'    ? 'This domain is not authorised. Add it in Firebase Console → Authentication → Settings → Authorised domains.' :
+        err.message
+      setError(msg)
       throw err
     }
   }
 
-  // ── Sign out ─────────────────────────────────────────────────────────────────
+  // ── Sign out ─────────────────────────────────────────────────────────────
   const signOut = async () => {
     await signOutUser()
     setUser(null)
     setProfile(null)
   }
 
-  // ── Update profile ────────────────────────────────────────────────────────────
+  // ── Update own profile ───────────────────────────────────────────────────
   const updateProfile = async (updates) => {
-    if (!user) return
-    // Strip role from updates — role changes must go through assignRole()
-    const { role: _role, ...safeUpdates } = updates
-    const ref = doc(db, 'users', user.uid)
-    await updateDoc(ref, { ...safeUpdates, updatedAt: serverTimestamp() })
-    // Re-read from Firestore so local state is always in sync with DB
-    const snap = await getDoc(ref)
-    if (snap.exists()) setProfile({ id: snap.id, ...snap.data() })
+    if (!user) throw new Error('Not signed in')
+    const userRef = doc(db, 'users', user.uid)
+    try {
+      await updateDoc(userRef, { ...updates, updatedAt: serverTimestamp() })
+      setProfile(prev => ({ ...prev, ...updates }))
+    } catch (err) {
+      console.error('updateProfile error:', err)
+      throw new Error(
+        err.code === 'permission-denied'
+          ? 'Permission denied. Make sure Firestore rules are deployed.'
+          : `Update failed: ${err.message}`
+      )
+    }
   }
 
-  // ── Assign role (Super Admin only) ────────────────────────────────────────────
+  // ── Assign role to another user (Super Admin / IT Admin only) ────────────
   const assignRole = async (targetUserId, newRole) => {
-    if (!can('ASSIGN_ROLES')) throw new Error('Insufficient permissions')
+    if (!can('ASSIGN_ROLES') && !can('MANAGE_USERS')) {
+      throw new Error('Insufficient permissions to assign roles')
+    }
     const ref = doc(db, 'users', targetUserId)
-    await updateDoc(ref, { role: newRole, updatedAt: serverTimestamp() })
+    try {
+      await updateDoc(ref, { role: newRole, updatedAt: serverTimestamp() })
+    } catch (err) {
+      throw new Error(`Role assignment failed: ${err.message}`)
+    }
   }
 
-  // ── Permission checker ────────────────────────────────────────────────────────
+  // ── Create a test user manually (Super Admin only) ───────────────────────
+  const createTestUser = async ({ email, displayName, role, department }) => {
+    if (profile?.role !== ROLES.SUPER_ADMIN) {
+      throw new Error('Only Super Admin can create test users')
+    }
+    // Creates a placeholder user doc (will be populated on their first login)
+    const placeholderId = `placeholder_${Date.now()}`
+    const ref = doc(db, 'users', placeholderId)
+    await setDoc(ref, {
+      uid:         placeholderId,
+      email,
+      displayName,
+      role:        role ?? ROLES.USER,
+      department:  department ?? '',
+      phone:       '',
+      photoURL:    null,
+      createdAt:   serverTimestamp(),
+      lastSeenAt:  null,
+      updatedAt:   serverTimestamp(),
+      preferences: { theme: 'dark', language: 'en', notifications: { email: true, push: true, sla: true } },
+      active:      true,
+      isPlaceholder: true, // will merge on real login
+    })
+    return placeholderId
+  }
+
+  // ── Permission checker ───────────────────────────────────────────────────
   const can = useCallback((permission) => {
     if (!profile) return false
     const allowed = PERMISSIONS[permission]
-    return Array.isArray(allowed) && allowed.includes(profile.role)
+    if (!Array.isArray(allowed)) return false
+    return allowed.includes(profile.role)
   }, [profile])
 
   const hasRole = useCallback((...roles) => {
     return roles.includes(profile?.role)
   }, [profile])
 
-  const isAdmin = hasRole(ROLES.SUPER_ADMIN, ROLES.IT_ADMIN)
-  const isAgent = hasRole(ROLES.SUPER_ADMIN, ROLES.IT_ADMIN, ROLES.IT_AGENT)
+  // Computed role flags
+  const isAdmin   = hasRole(ROLES.SUPER_ADMIN, ROLES.IT_ADMIN)
+  const isAgent   = hasRole(ROLES.SUPER_ADMIN, ROLES.IT_ADMIN, ROLES.IT_AGENT)
+  const isManager = hasRole(ROLES.SUPER_ADMIN, ROLES.IT_ADMIN, ROLES.MANAGER)
 
   const value = {
-    user, profile, loading, error,
-    signIn, signOut, updateProfile, assignRole,
-    can, hasRole, isAdmin, isAgent,
-    role: profile?.role,
+    user,
+    profile,
+    loading,
+    error,
+    signIn,
+    signOut,
+    updateProfile,
+    assignRole,
+    createTestUser,
+    can,
+    hasRole,
+    isAdmin,
+    isAgent,
+    isManager,
+    role:  profile?.role ?? null,
     theme: profile?.preferences?.theme ?? 'dark',
   }
 

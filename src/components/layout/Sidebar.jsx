@@ -1,160 +1,248 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// NexDesk — Sidebar  v2.0
-// Phase 2: ITAM, Reports, Workflow added; all badges real
+// NexDesk — Sidebar (FIXED — persona-aware nav per module)
 // ─────────────────────────────────────────────────────────────────────────────
-import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
-  Home, Ticket, ChevronRight, LayoutDashboard, AlertTriangle,
-  Bug, GitBranch, ShoppingBag, Package, SlidersHorizontal,
-  Clock, BookOpen, Grid, Monitor, Cpu, Key, BarChart3,
-  Users, Shield, Settings, Zap, MessageCircle,
+  LayoutDashboard, Ticket, Clock, BookOpen, ShoppingBag,
+  AlertTriangle, GitBranch, Package, RefreshCw, BarChart3,
+  Users, Settings, Shield, ChevronRight, Workflow,
+  MonitorDot, Database, Lock, Map, Building2, Bell,
+  Wrench, FileText, Star, Home,
 } from 'lucide-react'
-import { useAuth }  from '@/context/AuthContext'
-import { ROLES }    from '@/lib/constants'
-import { db, collection, query, where, onSnapshot } from '@/lib/firebase'
+import { useAuth } from '@/context/AuthContext'
+import { ROLES, PERMISSIONS } from '@/lib/constants'
 import clsx from 'clsx'
 
-// ── Sidebar nav structure per module ────────────────────────────────────────
-const MODULES = [
-  {
-    id: 'portal', label: 'Portal', icon: Home, path: '/portal',
-    roles: null, // all
-  },
-  {
-    id: 'itsm', label: 'ITSM', icon: Ticket, base: '/itsm', badge: true,
-    roles: null,
-    children: [
-      { label: 'Dashboard',       icon: LayoutDashboard, path: '/itsm',          end: true },
-      { label: 'Incidents',       icon: AlertTriangle,   path: '/itsm/tickets',  q: { type: 'INCIDENT' } },
-      { label: 'Problems',        icon: Bug,             path: '/itsm/tickets',  q: { type: 'PROBLEM'  } },
-      { label: 'Changes',         icon: GitBranch,       path: '/itsm/tickets',  q: { type: 'CHANGE'   } },
-      { label: 'Requests',        icon: ShoppingBag,     path: '/itsm/tickets',  q: { type: 'SERVICE_REQUEST' } },
-      { label: 'SLA Dashboard',   icon: Clock,           path: '/itsm/sla',      perm: 'VIEW_SLA_DASHBOARD' },
-      { label: 'Knowledge Base',  icon: BookOpen,        path: '/itsm/knowledge' },
-      { label: 'Service Catalog', icon: Grid,            path: '/itsm/catalog'   },
-    ],
-  },
-  {
-    id: 'itam', label: 'ITAM', icon: Monitor, base: '/itam',
-    roles: [ROLES.SUPER_ADMIN, ROLES.IT_ADMIN, ROLES.IT_AGENT, ROLES.MANAGER],
-    perm: 'ACCESS_ITAM',
-    children: [
-      { label: 'Dashboard',    icon: LayoutDashboard, path: '/itam',          end: true },
-      { label: 'All Assets',   icon: Cpu,             path: '/itam/assets'   },
-      { label: 'Add Asset',    icon: Package,         path: '/itam/assets/new', perm: 'MANAGE_ITAM' },
-    ],
-  },
-  {
-    id: 'reports', label: 'Reports', icon: BarChart3, path: '/reports',
-    roles: [ROLES.SUPER_ADMIN, ROLES.IT_ADMIN, ROLES.MANAGER, ROLES.IT_AGENT],
-    perm: 'VIEW_REPORTS',
-  },
-  {
-    id: 'admin', label: 'Admin', icon: Settings, base: '/admin',
-    roles: [ROLES.SUPER_ADMIN, ROLES.IT_ADMIN],
-    perm: 'ACCESS_ADMIN_PANEL',
-    children: [
-      { label: 'Users',      icon: Users,   path: '/admin/users'     },
-      { label: 'Roles',      icon: Shield,  path: '/admin/roles'     },
-      { label: 'Workflows',  icon: Zap,     path: '/admin/workflows', perm: 'MANAGE_WORKFLOWS' },
-      { label: 'Assignment Groups', icon: Users, path: '/admin/groups', perm: 'MANAGE_USERS' },
-      { label: 'Settings',   icon: Settings,path: '/admin/settings'  },
-    ],
-  },
-]
+// ── Nav config keyed by url prefix ──────────────────────────────────────────
+function getSidebarConfig(base, role) {
+  const isAdmin   = [ROLES.SUPER_ADMIN, ROLES.IT_ADMIN].includes(role)
+  const isAgent   = [ROLES.SUPER_ADMIN, ROLES.IT_ADMIN, ROLES.IT_AGENT].includes(role)
+  const isMgr     = [ROLES.SUPER_ADMIN, ROLES.IT_ADMIN, ROLES.MANAGER].includes(role)
+  const isSuper   = role === ROLES.SUPER_ADMIN
 
-function NavItem({ icon: Icon, label, path, end, active, badge }) {
-  return (
-    <NavLink to={path} end={end}
-      className={({ isActive }) => clsx(
-        'flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs transition-all duration-150 group',
-        isActive || active ? 'font-medium' : 'font-normal opacity-70 hover:opacity-100 hover:bg-[var(--bg-hover)]'
-      )}
-      style={({ isActive }) => isActive || active
-        ? { background: 'var(--accent)', color: '#fff' }
-        : { color: 'var(--text-secondary)' }
-      }
-    >
-      <Icon size={13} className="flex-shrink-0" />
-      <span className="flex-1 truncate">{label}</span>
-      {badge > 0 && (
-        <span className="ml-auto px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-red-500 text-white">
-          {badge > 99 ? '99+' : badge}
-        </span>
-      )}
-    </NavLink>
-  )
+  const configs = {
+    '/portal': {
+      title: 'Portal', subtitle: 'Digital Workplace Hub',
+      sections: [{
+        items: [
+          { path:'/portal',           label:'Home',            icon:Home         },
+          { path:'/itsm/catalog',     label:'Service Catalog', icon:ShoppingBag  },
+          { path:'/itsm/knowledge',   label:'Knowledge Base',  icon:BookOpen     },
+          { path:'/itsm/tickets',     label:'My Tickets',      icon:Ticket, badge:true },
+          { path:'/notifications',    label:'Notifications',   icon:Bell         },
+        ],
+      }],
+    },
+
+    '/itsm': {
+      title: 'ITSM', subtitle: 'IT Service Management',
+      sections: [
+        {
+          label: 'Operations',
+          items: [
+            { path:'/itsm/dashboard',            label:'Dashboard',       icon:LayoutDashboard, show:true        },
+            { path:'/itsm/tickets',              label:'All Tickets',     icon:Ticket,   badge:true, show:isAgent },
+            { path:'/itsm/tickets?type=INCIDENT',label:'Incidents',       icon:AlertTriangle,   show:isAgent     },
+            { path:'/itsm/tickets?type=PROBLEM', label:'Problems',        icon:RefreshCw,       show:isAgent     },
+            { path:'/itsm/tickets?type=CHANGE',  label:'Changes',         icon:GitBranch,       show:isAgent     },
+            { path:'/itsm/tickets?type=SERVICE_REQUEST',label:'Requests', icon:Package,         show:true        },
+          ],
+        },
+        {
+          label: 'Management',
+          items: [
+            { path:'/itsm/sla',       label:'SLA Management',  icon:Clock,       show:isAgent },
+            { path:'/itsm/workflow',  label:'Workflow Engine',  icon:Workflow,    show:isAdmin },
+            { path:'/itsm/catalog',   label:'Service Catalog',  icon:ShoppingBag, show:true   },
+            { path:'/itsm/knowledge', label:'Knowledge Base',   icon:BookOpen,    show:true   },
+            { path:'/itsm/reports',   label:'Reports',          icon:BarChart3,   show:isMgr  },
+          ],
+        },
+      ],
+    },
+
+    '/itam': {
+      title: 'ITAM', subtitle: 'IT Asset Management',
+      sections: [{
+        label: 'Assets',
+        items: [
+          { path:'/itam/dashboard',   label:'Asset Dashboard', icon:LayoutDashboard, show:true  },
+          { path:'/itam/inventory',   label:'All Assets',       icon:Database,         show:true  },
+          { path:'/itam/cmdb',        label:'CMDB Relations',   icon:MonitorDot,       show:isAgent},
+          { path:'/itam/lifecycle',   label:'Lifecycle',        icon:RefreshCw,        show:isAgent},
+          { path:'/itam/compliance',  label:'Compliance',       icon:Shield,           show:isMgr  },
+          { path:'/itam/reports',     label:'Reports',          icon:BarChart3,        show:isMgr  },
+        ],
+      }],
+    },
+
+    '/iam': {
+      title: 'IAM', subtitle: 'Identity & Access',
+      sections: [{
+        label: 'Access Governance',
+        items: [
+          { path:'/iam/dashboard',    label:'Overview',         icon:LayoutDashboard, show:true  },
+          { path:'/iam/requests',     label:'Access Requests',  icon:Lock,    badge:true, show:true  },
+          { path:'/iam/approvals',    label:'Approvals',        icon:Shield,           show:isMgr  },
+          { path:'/iam/review',       label:'Access Review',    icon:FileText,         show:isAdmin},
+          { path:'/iam/compliance',   label:'Compliance',       icon:Shield,           show:isAdmin},
+        ],
+      }],
+    },
+
+    '/hrms': {
+      title: 'HRMS', subtitle: 'HR Management',
+      sections: [{
+        label: 'People',
+        items: [
+          { path:'/hrms/dashboard',   label:'HR Dashboard',    icon:LayoutDashboard, show:true },
+          { path:'/hrms/employees',   label:'Employees',       icon:Users,           show:true },
+          { path:'/hrms/onboarding',  label:'Onboarding',      icon:Star,            show:true },
+          { path:'/hrms/leave',       label:'Leave & Attend.', icon:Clock,           show:true },
+          { path:'/hrms/performance', label:'Performance',     icon:BarChart3,       show:isMgr},
+        ],
+      }],
+    },
+
+    '/fso': {
+      title: 'FSO', subtitle: 'Field Services',
+      sections: [{
+        label: 'Field Operations',
+        items: [
+          { path:'/fso/dashboard',    label:'Command Center',  icon:LayoutDashboard, show:true  },
+          { path:'/fso/workorders',   label:'Work Orders',     icon:Ticket, badge:true, show:true },
+          { path:'/fso/engineers',    label:'Engineers',       icon:Wrench,          show:isMgr  },
+          { path:'/fso/dispatch',     label:'Dispatch',        icon:Map,             show:isAgent},
+          { path:'/fso/reports',      label:'Reports',         icon:BarChart3,       show:isMgr  },
+        ],
+      }],
+    },
+
+    '/visitor': {
+      title: 'Visitor Mgmt', subtitle: 'Premises & Access',
+      sections: [{
+        label: 'Visitor Management',
+        items: [
+          { path:'/visitor/dashboard', label:'Live Overview',  icon:LayoutDashboard, show:true  },
+          { path:'/visitor/register',  label:'Pre-Register',   icon:Users,           show:true  },
+          { path:'/visitor/workflow',  label:'Check-In Flow',  icon:Workflow,        show:isAgent},
+          { path:'/visitor/access',    label:'Physical Access',icon:Building2,       show:isAdmin},
+          { path:'/visitor/analytics', label:'Analytics',      icon:BarChart3,       show:isMgr  },
+        ],
+      }],
+    },
+
+    '/admin': {
+      title: 'Administration', subtitle: 'Platform Management',
+      sections: [{
+        label: 'Admin',
+        items: [
+          { path:'/admin/users',    label:'Users',           icon:Users,    show:isAdmin   },
+          { path:'/admin/roles',    label:'Roles & Perms',   icon:Shield,   show:isAdmin   },
+          { path:'/admin/settings', label:'System Settings', icon:Settings, show:isAdmin   },
+          { path:'/admin/workflow', label:'Workflow Builder', icon:Workflow, show:isSuper   },
+          { path:'/admin/audit',    label:'Audit Log',        icon:FileText, show:isAdmin   },
+        ],
+      }],
+    },
+  }
+
+  return configs[base] ?? configs['/portal']
 }
 
-export default function Sidebar({ collapsed }) {
+export default function Sidebar() {
   const location = useLocation()
-  const { can, role, profile } = useAuth()
-  const [expanded, setExpanded] = useState({ itsm: true })
-  const [openTickets, setOpenTickets] = useState(0)
+  const navigate = useNavigate()
+  const { role } = useAuth()
 
-  // Real-time open ticket badge
-  useEffect(() => {
-    if (!profile?.uid) return
-    const constraints = [where('status', 'in', ['NEW','OPEN','ASSIGNED','IN_PROGRESS'])]
-    if (role === ROLES.USER) constraints.push(where('requesterId', '==', profile.uid))
-    const q = query(collection(db, 'tickets'), ...constraints)
-    return onSnapshot(q, s => setOpenTickets(s.size), () => {})
-  }, [profile?.uid, role])
+  const base    = '/' + location.pathname.split('/')[1]
+  const config  = getSidebarConfig(base, role)
 
-  // Auto-expand active module
-  useEffect(() => {
-    const seg = location.pathname.split('/')[1]
-    if (seg) setExpanded(p => ({ ...p, [seg]: true }))
-  }, [location.pathname])
-
-  if (collapsed) return null
+  const isActive = (path) => {
+    const bare = path.split('?')[0]
+    if (bare === '/portal' && location.pathname === '/portal') return true
+    if (bare !== '/portal' && location.pathname.startsWith(bare) && bare !== '/') return true
+    return false
+  }
 
   return (
-    <nav className="h-full overflow-y-auto py-4 px-2 space-y-0.5">
-      {MODULES.map(mod => {
-        // Role check
-        if (mod.roles && !mod.roles.includes(role)) return null
-        if (mod.perm  && !can(mod.perm))             return null
+    <div
+      className="h-full flex flex-col overflow-hidden"
+      style={{
+        background:  'var(--bg-surface)',
+        borderRight: '1px solid var(--border-subtle)',
+        width:        220,
+      }}
+    >
+      {/* Header */}
+      <div
+        className="flex items-center gap-2 px-3.5 py-3 flex-shrink-0"
+        style={{ borderBottom: '1px solid var(--border-subtle)', height: 52 }}
+      >
+        <div>
+          <p className="text-xs font-semibold leading-tight" style={{ color: 'var(--text-primary)' }}>
+            {config.title}
+          </p>
+          {config.subtitle && (
+            <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              {config.subtitle}
+            </p>
+          )}
+        </div>
+      </div>
 
-        const isBase = mod.base && location.pathname.startsWith(mod.base)
-
-        if (!mod.children) {
-          // Flat link
-          return <NavItem key={mod.id} icon={mod.icon} label={mod.label} path={mod.path} end={mod.id === 'portal'} />
-        }
-
-        return (
-          <div key={mod.id}>
-            {/* Module header */}
-            <button
-              onClick={() => setExpanded(p => ({ ...p, [mod.id]: !p[mod.id] }))}
-              className={clsx(
-                'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs transition-all duration-150',
-                isBase ? 'font-semibold' : 'font-medium opacity-70 hover:opacity-100 hover:bg-[var(--bg-hover)]'
-              )}
-              style={{ color: isBase ? 'var(--text-primary)' : 'var(--text-muted)' }}
-            >
-              <mod.icon size={13} className="flex-shrink-0" />
-              <span className="flex-1 text-left">{mod.label}</span>
-              {mod.id === 'itsm' && openTickets > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-red-500 text-white">{openTickets > 99 ? '99+' : openTickets}</span>
-              )}
-              <ChevronRight size={11} style={{ transform: expanded[mod.id] ? 'rotate(90deg)' : 'none', transition: '0.2s' }} />
-            </button>
-
-            {/* Children */}
-            {expanded[mod.id] && (
-              <div className="ml-3 pl-2 mt-0.5 space-y-0.5" style={{ borderLeft: '1px solid var(--border-subtle)' }}>
-                {mod.children
-                  .filter(c => !c.perm || can(c.perm))
-                  .map(c => <NavItem key={c.path + (c.q ? JSON.stringify(c.q) : '')} icon={c.icon} label={c.label} path={c.path} end={c.end} />)
-                }
-              </div>
+      {/* Nav sections */}
+      <nav className="flex-1 overflow-y-auto py-2 px-2">
+        {config.sections.map((section, si) => (
+          <div key={si} className="mb-4">
+            {section.label && (
+              <p
+                className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider mb-1"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                {section.label}
+              </p>
             )}
+
+            {section.items
+              .filter(item => item.show !== false)
+              .map((item) => {
+                const active = isActive(item.path)
+                return (
+                  <button
+                    key={item.path}
+                    onClick={() => navigate(item.path)}
+                    className={clsx(
+                      'nd-nav-item w-full text-left mb-0.5',
+                      active && 'active',
+                    )}
+                  >
+                    <item.icon size={14} className="flex-shrink-0" />
+                    <span className="flex-1 text-[13px]">{item.label}</span>
+                    {item.badge && (
+                      <span className="ml-auto px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-red-500 text-white min-w-[18px] text-center">
+                        !
+                      </span>
+                    )}
+                    {active && !item.badge && (
+                      <ChevronRight size={12} className="ml-auto opacity-40" />
+                    )}
+                  </button>
+                )
+              })}
           </div>
-        )
-      })}
-    </nav>
+        ))}
+      </nav>
+
+      {/* Footer */}
+      <div
+        className="px-3 py-2.5 flex-shrink-0"
+        style={{ borderTop: '1px solid var(--border-subtle)' }}
+      >
+        <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+          NexDesk v1.0 · Phase 1 Live
+        </p>
+      </div>
+    </div>
   )
 }

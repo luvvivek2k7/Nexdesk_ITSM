@@ -1,423 +1,553 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// NexDesk — User Management Page v2
-// Full RBAC: invite users, assign roles, deactivate, real-time list
+// NexDesk — Users Management Page (FIXED + ENHANCED)
+// Super Admin: create test users, assign any role, deactivate
+// IT Admin: change roles (except super_admin), view all users
 // ─────────────────────────────────────────────────────────────────────────────
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
+import { toast }               from 'react-hot-toast'
 import {
-  db, collection, getDocs, doc, updateDoc, setDoc,
-  serverTimestamp, query, orderBy,
-} from '@/lib/firebase'
-import { useAuth } from '@/context/AuthContext'
-import { ROLES, ROLE_META } from '@/lib/constants'
-import { Card, Badge, Button, Spinner } from '@/components/shared/index.jsx'
-import { toast } from 'react-hot-toast'
-import { Users, Search, UserPlus, Shield, X, CheckCircle, XCircle, RefreshCw } from 'lucide-react'
+  Users, Search, Plus, Edit2, Trash2,
+  RefreshCw, Shield, X, Check, Eye, EyeOff,
+} from 'lucide-react'
+import { db, collection, getDocs, doc, updateDoc, setDoc, deleteDoc, serverTimestamp } from '@/lib/firebase'
+import { useAuth }            from '@/context/AuthContext'
+import { ROLES, ROLE_META }   from '@/lib/constants'
+import {
+  Card, Button, Badge, Input, Select, Spinner, EmptyState, AIInsight,
+} from '@/components/shared/index.jsx'
 import { formatDistanceToNow } from 'date-fns'
+import clsx from 'clsx'
 
-// ── Role color map ────────────────────────────────────────────────────────────
-const ROLE_COLORS = {
-  [ROLES.SUPER_ADMIN]:    'violet',
-  [ROLES.IT_ADMIN]:       'blue',
-  [ROLES.IT_AGENT]:       'cyan',
-  [ROLES.MANAGER]:        'green',
-  [ROLES.DEVELOPER]:      'amber',
-  [ROLES.HR]:             'pink',
-  [ROLES.FIELD_ENGINEER]: 'orange',
-  [ROLES.USER]:           'gray',
+const ROLE_COLOR = {
+  super_admin:    'violet',
+  it_admin:       'blue',
+  it_agent:       'cyan',
+  manager:        'green',
+  developer:      'amber',
+  hr:             'pink',
+  field_engineer: 'orange',
+  user:           'default',
 }
 
-// ── Invite Modal ──────────────────────────────────────────────────────────────
-function InviteModal({ onClose, onInvited }) {
-  const { profile: me } = useAuth()
-  const [email,  setEmail]  = useState('')
-  const [name,   setName]   = useState('')
-  const [role,   setRole]   = useState(ROLES.USER)
-  const [dept,   setDept]   = useState('')
+const ROLE_EMOJI = {
+  super_admin:    '👑',
+  it_admin:       '⚙️',
+  it_agent:       '🎧',
+  manager:        '📋',
+  developer:      '💻',
+  hr:             '🧑‍💼',
+  field_engineer: '🔧',
+  user:           '👤',
+}
+
+// ── Create / Edit User Modal ──────────────────────────────────────────────────
+function UserModal({ user, onClose, onSave, isSuperAdmin }) {
+  const isEdit = !!user
+  const [form, setForm] = useState({
+    displayName: user?.displayName ?? '',
+    email:       user?.email       ?? '',
+    role:        user?.role        ?? ROLES.USER,
+    department:  user?.department  ?? '',
+    phone:       user?.phone       ?? '',
+    active:      user?.active      ?? true,
+  })
   const [saving, setSaving] = useState(false)
 
-  const handleInvite = async () => {
-    if (!email.trim()) { toast.error('Email is required'); return }
-    if (!email.includes('@')) { toast.error('Enter a valid email'); return }
+  const set = (k, v) => setForm(p => ({ ...p, [k]: v }))
+
+  const handleSave = async () => {
+    if (!form.displayName.trim()) return toast.error('Name is required')
+    if (!isEdit && !form.email.trim()) return toast.error('Email is required')
     setSaving(true)
     try {
-      // Create a placeholder user doc — when they first sign in via Google
-      // with this email, AuthContext will find the doc exists and load it.
-      // We use email as the document ID key via meta lookup.
-      // Since Firebase Auth uses UID as doc ID, we store pending invites separately.
-      const inviteRef = doc(db, 'invites', email.toLowerCase().trim())
-      await setDoc(inviteRef, {
-        email:       email.toLowerCase().trim(),
-        displayName: name.trim() || email.split('@')[0],
-        role,
-        department:  dept.trim(),
-        invitedBy:   me?.displayName ?? me?.email,
-        invitedByUid: me?.uid,
-        invitedAt:   serverTimestamp(),
-        status:      'pending',
-      })
-      toast.success(`Invite created for ${email}. When they sign in with Google, they'll get the ${ROLE_META[role]?.label} role.`)
-      onInvited?.()
+      await onSave(form, user?.id)
       onClose()
-    } catch (e) {
-      console.error(e)
-      toast.error('Failed to create invite')
-    } finally { setSaving(false) }
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.7)' }}>
-      <div className="w-full max-w-md rounded-2xl p-6 space-y-4" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-default)' }}>
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>Invite User</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--bg-hover)]"><X size={16} style={{ color: 'var(--text-muted)' }} /></button>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.7)' }}
+      onClick={e => e.target === e.currentTarget && onClose()}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl p-6"
+        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-default)' }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>
+            {isEdit ? 'Edit User' : 'Create Test User'}
+          </h2>
+          <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[var(--bg-hover)]">
+            <X size={15} style={{ color: 'var(--text-muted)' }} />
+          </button>
         </div>
-
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          The invited user will get the assigned role automatically when they first sign in with their Google account.
-        </p>
 
         <div className="space-y-3">
-          <div>
-            <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-muted)' }}>Email Address *</label>
-            <input value={email} onChange={e => setEmail(e.target.value)} placeholder="user@company.com"
-              className="nd-input w-full" type="email" autoFocus />
-          </div>
-          <div>
-            <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-muted)' }}>Display Name</label>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="Full name (optional)"
-              className="nd-input w-full" />
-          </div>
-          <div>
-            <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-muted)' }}>Role *</label>
-            <select value={role} onChange={e => setRole(e.target.value)} className="nd-input w-full">
-              {Object.entries(ROLE_META).map(([key, meta]) => (
-                <option key={key} value={key}>{meta.label} — {meta.description}</option>
+          <Input
+            label="Display Name *"
+            value={form.displayName}
+            onChange={e => set('displayName', e.target.value)}
+            placeholder="e.g. Ravi Kumar"
+          />
+
+          {!isEdit && (
+            <Input
+              label="Email *"
+              type="email"
+              value={form.email}
+              onChange={e => set('email', e.target.value)}
+              placeholder="e.g. ravi.kumar@company.com"
+            />
+          )}
+
+          <Select
+            label="Role / Persona"
+            value={form.role}
+            onChange={e => set('role', e.target.value)}
+          >
+            {Object.entries(ROLE_META)
+              .filter(([key]) => isSuperAdmin || key !== ROLES.SUPER_ADMIN)
+              .map(([key, meta]) => (
+                <option key={key} value={key}>
+                  {ROLE_EMOJI[key]} {meta.label}
+                </option>
               ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-muted)' }}>Department</label>
-            <input value={dept} onChange={e => setDept(e.target.value)} placeholder="e.g. IT, HR, Finance"
-              className="nd-input w-full" />
-          </div>
-        </div>
+          </Select>
 
-        {/* Role preview */}
-        <div className="p-3 rounded-lg" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
-          <p className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{ROLE_META[role]?.label}</p>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{ROLE_META[role]?.description}</p>
-        </div>
+          <Input
+            label="Department"
+            value={form.department}
+            onChange={e => set('department', e.target.value)}
+            placeholder="e.g. IT Operations"
+          />
 
-        <div className="flex gap-2 justify-end pt-1">
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button icon={UserPlus} loading={saving} onClick={handleInvite}>Create Invite</Button>
+          <Input
+            label="Phone"
+            value={form.phone}
+            onChange={e => set('phone', e.target.value)}
+            placeholder="+91 98765 43210"
+          />
+
+          {isEdit && (
+            <div className="flex items-center justify-between py-2">
+              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Account Status</span>
+              <button
+                onClick={() => set('active', !form.active)}
+                className={clsx(
+                  'px-3 py-1 rounded-full text-xs font-semibold border transition-all',
+                  form.active
+                    ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                    : 'bg-red-500/10 text-red-400 border-red-500/20'
+                )}
+              >
+                {form.active ? '✅ Active' : '🚫 Deactivated'}
+              </button>
+            </div>
+          )}
+
+          <AIInsight type="info">
+            {isEdit
+              ? 'Changes take effect immediately. The user will see their new role on next page refresh.'
+              : 'This creates a placeholder record. The user gets the assigned role when they first sign in with Google using this email.'}
+          </AIInsight>
+
+          <div className="flex gap-3 pt-2">
+            <Button variant="ghost" onClick={onClose} className="flex-1">Cancel</Button>
+            <Button loading={saving} onClick={handleSave} className="flex-1">
+              {isEdit ? 'Save Changes' : 'Create User'}
+            </Button>
+          </div>
         </div>
       </div>
     </div>
   )
 }
 
-// ── Role Change Dropdown ──────────────────────────────────────────────────────
-function RoleCell({ user, meUid, canAssign, onChange }) {
-  const [saving, setSaving] = useState(false)
-
-  const handleChange = async (e) => {
-    const newRole = e.target.value
-    if (newRole === user.role) return
-    setSaving(true)
-    try {
-      await updateDoc(doc(db, 'users', user.id), {
-        role: newRole,
-        updatedAt: serverTimestamp(),
-      })
-      onChange(user.id, newRole)
-      toast.success(`${user.displayName ?? user.email}'s role changed to ${ROLE_META[newRole]?.label}`)
-    } catch (e) {
-      console.error(e)
-      toast.error('Failed to update role. Check Firestore permissions.')
-    } finally { setSaving(false) }
-  }
-
-  if (!canAssign || user.id === meUid) {
-    return <Badge variant={ROLE_COLORS[user.role] ?? 'gray'}>{ROLE_META[user.role]?.label ?? user.role}</Badge>
-  }
-
-  return (
-    <div className="flex items-center gap-2">
-      {saving
-        ? <Spinner size={14} />
-        : (
-          <select value={user.role} onChange={handleChange}
-            className="nd-input text-xs py-1" style={{ width: 'auto', minWidth: 140 }}>
-            {Object.entries(ROLE_META).map(([key, meta]) => (
-              <option key={key} value={key}>{meta.label}</option>
-            ))}
-          </select>
-        )
-      }
-    </div>
-  )
-}
-
-// ── Main Page ─────────────────────────────────────────────────────────────────
+// ── Main Users Page ───────────────────────────────────────────────────────────
 export default function UsersPage() {
-  const { profile: me, can } = useAuth()
-  const [users,    setUsers]    = useState([])
-  const [invites,  setInvites]  = useState([])
-  const [loading,  setLoading]  = useState(true)
-  const [search,   setSearch]   = useState('')
-  const [showInvite, setShowInvite] = useState(false)
-  const [tab,      setTab]      = useState('users') // 'users' | 'invites'
+  const { profile: me, can, role: myRole } = useAuth()
+  const isSuperAdmin = myRole === ROLES.SUPER_ADMIN
+  const isItAdmin    = myRole === ROLES.IT_ADMIN
 
-  const canAssign  = can('ASSIGN_ROLES')
-  const canManage  = can('MANAGE_USERS')
+  const [users,     setUsers]     = useState([])
+  const [loading,   setLoading]   = useState(true)
+  const [search,    setSearch]    = useState('')
+  const [roleFilter,setRoleFilter]= useState('ALL')
+  const [showModal, setShowModal] = useState(false)
+  const [editUser,  setEditUser]  = useState(null)
+  const [deleting,  setDeleting]  = useState(null)
 
-  const loadData = async () => {
+  const fetchUsers = async () => {
     setLoading(true)
     try {
-      const [usersSnap, invitesSnap] = await Promise.all([
-        getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc'))),
-        getDocs(query(collection(db, 'invites'), orderBy('invitedAt', 'desc'))),
-      ])
-      setUsers(usersSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-      setInvites(invitesSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-    } catch (e) {
-      console.error(e)
-      toast.error('Failed to load users')
-    } finally { setLoading(false) }
-  }
-
-  useEffect(() => { loadData() }, [])
-
-  const handleRoleChange = (uid, newRole) => {
-    setUsers(prev => prev.map(u => u.id === uid ? { ...u, role: newRole } : u))
-  }
-
-  const handleToggleActive = async (user) => {
-    try {
-      await updateDoc(doc(db, 'users', user.id), {
-        active: !user.active,
-        updatedAt: serverTimestamp(),
-      })
-      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, active: !u.active } : u))
-      toast.success(`${user.displayName} ${!user.active ? 'activated' : 'deactivated'}`)
-    } catch (e) {
-      console.error(e)
-      toast.error('Failed to update user status')
+      const snap = await getDocs(collection(db, 'users'))
+      setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    } catch (err) {
+      toast.error('Failed to load users: ' + err.message)
+    } finally {
+      setLoading(false)
     }
   }
 
-  const handleDeleteInvite = async (email) => {
-    try {
-      const { deleteDoc, doc: fDoc } = await import('@/lib/firebase')
-      await deleteDoc(fDoc(db, 'invites', email))
-      setInvites(prev => prev.filter(i => i.id !== email))
-      toast.success('Invite removed')
-    } catch { toast.error('Failed to remove invite') }
+  useEffect(() => { fetchUsers() }, [])
+
+  // ── Save handler (create or edit) ────────────────────────────────────────
+  const handleSave = async (form, userId) => {
+    if (userId) {
+      // Edit existing
+      const ref = doc(db, 'users', userId)
+      await updateDoc(ref, {
+        displayName: form.displayName,
+        role:        form.role,
+        department:  form.department,
+        phone:       form.phone,
+        active:      form.active,
+        updatedAt:   serverTimestamp(),
+      })
+      setUsers(prev => prev.map(u =>
+        u.id === userId ? { ...u, ...form } : u
+      ))
+      toast.success('User updated')
+    } else {
+      // Create placeholder
+      const id  = `placeholder_${Date.now()}`
+      const ref = doc(db, 'users', id)
+      const newUser = {
+        uid:           id,
+        email:         form.email,
+        displayName:   form.displayName,
+        role:          form.role,
+        department:    form.department,
+        phone:         form.phone,
+        photoURL:      null,
+        active:        true,
+        isPlaceholder: true,
+        createdAt:     serverTimestamp(),
+        lastSeenAt:    null,
+        updatedAt:     serverTimestamp(),
+        preferences:   { theme: 'dark', language: 'en', notifications: { email: true, push: true, sla: true } },
+      }
+      await setDoc(ref, newUser)
+      setUsers(prev => [...prev, { id, ...newUser }])
+      toast.success(`User "${form.displayName}" created as ${ROLE_META[form.role]?.label}`)
+    }
   }
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return users
-    const q = search.toLowerCase()
-    return users.filter(u =>
-      u.displayName?.toLowerCase().includes(q) ||
-      u.email?.toLowerCase().includes(q) ||
-      u.department?.toLowerCase().includes(q) ||
-      u.role?.toLowerCase().includes(q)
-    )
-  }, [users, search])
+  // ── Quick role change from table ──────────────────────────────────────────
+  const handleRoleChange = async (userId, newRole) => {
+    if (!can('MANAGE_USERS')) return toast.error('Permission denied')
+    if (userId === me?.uid) return toast.error('Cannot change your own role')
+    try {
+      await updateDoc(doc(db, 'users', userId), {
+        role:      newRole,
+        updatedAt: serverTimestamp(),
+      })
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u))
+      toast.success(`Role updated to ${ROLE_META[newRole]?.label}`)
+    } catch (err) {
+      toast.error('Failed: ' + err.message)
+    }
+  }
+
+  // ── Delete / Deactivate ───────────────────────────────────────────────────
+  const handleDelete = async (userId, userName) => {
+    if (!isSuperAdmin) return toast.error('Only Super Admin can delete users')
+    if (userId === me?.uid) return toast.error('Cannot delete your own account')
+    setDeleting(userId)
+    try {
+      // Soft delete — mark inactive (preserves ticket history)
+      await updateDoc(doc(db, 'users', userId), {
+        active:    false,
+        updatedAt: serverTimestamp(),
+      })
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, active: false } : u))
+      toast.success(`${userName} deactivated`)
+    } catch (err) {
+      toast.error('Failed: ' + err.message)
+    } finally {
+      setDeleting(null)
+    }
+  }
+
+  // ── Filtered users ────────────────────────────────────────────────────────
+  const filtered = users.filter(u => {
+    const matchSearch = !search.trim() ||
+      u.displayName?.toLowerCase().includes(search.toLowerCase()) ||
+      u.email?.toLowerCase().includes(search.toLowerCase()) ||
+      u.department?.toLowerCase().includes(search.toLowerCase())
+    const matchRole = roleFilter === 'ALL' || u.role === roleFilter
+    return matchSearch && matchRole
+  })
+
+  // Counts per role
+  const roleCounts = users.reduce((acc, u) => {
+    acc[u.role] = (acc[u.role] ?? 0) + 1
+    return acc
+  }, {})
 
   return (
     <div className="space-y-5 animate-fade-in">
-      {showInvite && (
-        <InviteModal onClose={() => setShowInvite(false)} onInvited={loadData} />
-      )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>User Management</h1>
+          <h1 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
+            User Management
+          </h1>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-            {users.length} registered · {invites.filter(i => i.status === 'pending').length} pending invites
+            {users.length} registered users · {users.filter(u => u.active !== false).length} active
           </p>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" variant="ghost" icon={RefreshCw} onClick={loadData}>Refresh</Button>
-          {canManage && (
-            <Button size="sm" icon={UserPlus} onClick={() => setShowInvite(true)}>Invite User</Button>
+          <Button variant="ghost" size="sm" icon={RefreshCw} onClick={fetchUsers}>
+            Refresh
+          </Button>
+          {(isSuperAdmin || isItAdmin) && (
+            <Button size="sm" icon={Plus} onClick={() => { setEditUser(null); setShowModal(true) }}>
+              Add User
+            </Button>
           )}
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: 'var(--bg-elevated)' }}>
-        {['users', 'invites'].map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            className="px-4 py-1.5 rounded-md text-xs font-medium transition-all capitalize"
-            style={{
-              background: tab === t ? 'var(--accent)' : 'transparent',
-              color: tab === t ? '#fff' : 'var(--text-muted)',
-            }}>
-            {t} {t === 'invites' && invites.length > 0 && `(${invites.length})`}
-          </button>
-        ))}
+      {/* Role summary pills */}
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => setRoleFilter('ALL')}
+          className={clsx(
+            'px-3 py-1.5 rounded-full text-xs font-semibold border transition-all',
+            roleFilter === 'ALL'
+              ? 'bg-[var(--accent-subtle)] text-[var(--accent)] border-[var(--accent-border)]'
+              : 'border-[var(--border-default)] text-[var(--text-muted)]'
+          )}
+        >
+          All ({users.length})
+        </button>
+        {Object.entries(ROLE_META).map(([key, meta]) => {
+          const count = roleCounts[key] ?? 0
+          if (count === 0) return null
+          return (
+            <button
+              key={key}
+              onClick={() => setRoleFilter(key === roleFilter ? 'ALL' : key)}
+              className={clsx(
+                'px-3 py-1.5 rounded-full text-xs font-semibold border transition-all flex items-center gap-1',
+                roleFilter === key
+                  ? 'bg-[var(--accent-subtle)] text-[var(--accent)] border-[var(--accent-border)]'
+                  : 'border-[var(--border-default)] text-[var(--text-muted)]'
+              )}
+            >
+              <span>{ROLE_EMOJI[key]}</span> {meta.label} ({count})
+            </button>
+          )
+        })}
       </div>
 
       {/* Search */}
-      {tab === 'users' && (
-        <div className="flex items-center gap-2 rounded-lg px-3 py-2"
-          style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-default)' }}>
-          <Search size={13} style={{ color: 'var(--text-muted)' }} />
-          <input placeholder="Search by name, email, department, role…" value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="bg-transparent border-none outline-none text-sm flex-1"
-            style={{ color: 'var(--text-primary)' }} />
-          {search && <button onClick={() => setSearch('')}><X size={13} style={{ color: 'var(--text-muted)' }} /></button>}
-        </div>
-      )}
-
-      {/* Users Table */}
-      {tab === 'users' && (
-        <Card padding={false}>
-          {loading
-            ? <div className="flex justify-center py-12"><Spinner /></div>
-            : filtered.length === 0
-              ? <div className="py-12 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
-                  {search ? 'No users match your search' : 'No users yet'}
-                </div>
-              : (
-                <div className="overflow-x-auto">
-                  <table className="nd-table">
-                    <thead>
-                      <tr>
-                        <th>User</th>
-                        <th>Email</th>
-                        <th>Department</th>
-                        <th>Role</th>
-                        <th>Status</th>
-                        <th>Last Seen</th>
-                        {canManage && <th>Actions</th>}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filtered.map(user => {
-                        const lastSeen = user.lastSeenAt?.toDate?.()
-                        const isSelf   = user.id === me?.uid
-                        return (
-                          <tr key={user.id}>
-                            <td>
-                              <div className="flex items-center gap-2.5">
-                                <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-                                  style={{ background: user.active !== false ? 'linear-gradient(135deg,#3b62f5,#7c3aed)' : 'var(--bg-elevated)' }}>
-                                  {user.displayName?.charAt(0)?.toUpperCase() ?? 'U'}
-                                </div>
-                                <div>
-                                  <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                                    {user.displayName ?? '—'}
-                                    {isSelf && <span className="ml-1 text-[10px] px-1 py-0.5 rounded" style={{ background: 'var(--accent)', color: '#fff' }}>You</span>}
-                                  </p>
-                                </div>
-                              </div>
-                            </td>
-                            <td><span className="text-xs" style={{ color: 'var(--text-muted)' }}>{user.email}</span></td>
-                            <td><span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{user.department || '—'}</span></td>
-                            <td>
-                              <RoleCell
-                                user={user}
-                                meUid={me?.uid}
-                                canAssign={canAssign}
-                                onChange={handleRoleChange}
-                              />
-                            </td>
-                            <td>
-                              <Badge variant={user.active !== false ? 'green' : 'gray'}>
-                                {user.active !== false ? 'Active' : 'Inactive'}
-                              </Badge>
-                            </td>
-                            <td>
-                              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                {lastSeen ? formatDistanceToNow(lastSeen, { addSuffix: true }) : '—'}
-                              </span>
-                            </td>
-                            {canManage && (
-                              <td>
-                                {!isSelf && (
-                                  <button
-                                    onClick={() => handleToggleActive(user)}
-                                    title={user.active !== false ? 'Deactivate user' : 'Activate user'}
-                                    className="p-1.5 rounded-lg hover:bg-[var(--bg-hover)] transition-colors"
-                                  >
-                                    {user.active !== false
-                                      ? <XCircle size={14} className="text-red-400" />
-                                      : <CheckCircle size={14} className="text-green-400" />}
-                                  </button>
-                                )}
-                              </td>
-                            )}
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-        </Card>
-      )}
-
-      {/* Invites Tab */}
-      {tab === 'invites' && (
-        <Card padding={false}>
-          {loading
-            ? <div className="flex justify-center py-12"><Spinner /></div>
-            : invites.length === 0
-              ? <div className="py-12 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
-                  No pending invites. Click "Invite User" to get started.
-                </div>
-              : (
-                <div className="overflow-x-auto">
-                  <table className="nd-table">
-                    <thead>
-                      <tr><th>Email</th><th>Name</th><th>Role</th><th>Department</th><th>Invited By</th><th>Status</th><th></th></tr>
-                    </thead>
-                    <tbody>
-                      {invites.map(inv => (
-                        <tr key={inv.id}>
-                          <td><span className="text-xs font-mono" style={{ color: 'var(--text-primary)' }}>{inv.email}</span></td>
-                          <td><span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{inv.displayName || '—'}</span></td>
-                          <td><Badge variant={ROLE_COLORS[inv.role] ?? 'gray'}>{ROLE_META[inv.role]?.label ?? inv.role}</Badge></td>
-                          <td><span className="text-xs" style={{ color: 'var(--text-muted)' }}>{inv.department || '—'}</span></td>
-                          <td><span className="text-xs" style={{ color: 'var(--text-muted)' }}>{inv.invitedBy}</span></td>
-                          <td><Badge variant={inv.status === 'pending' ? 'amber' : 'green'}>{inv.status}</Badge></td>
-                          <td>
-                            <button onClick={() => handleDeleteInvite(inv.id)}
-                              className="p-1.5 rounded hover:bg-[var(--bg-hover)]">
-                              <X size={13} className="text-red-400" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-        </Card>
-      )}
-
-      {/* RBAC Info box */}
-      <div className="p-4 rounded-xl" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
-        <div className="flex items-center gap-2 mb-3">
-          <Shield size={14} style={{ color: 'var(--accent)' }} />
-          <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>How Role-Based Access Works</span>
-        </div>
-        <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
-          {Object.entries(ROLE_META).map(([key, meta]) => (
-            <div key={key} className="p-2 rounded-lg" style={{ background: 'var(--bg-surface)' }}>
-              <p className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{meta.label}</p>
-              <p className="text-[10px] mt-0.5 leading-relaxed" style={{ color: 'var(--text-muted)' }}>{meta.description}</p>
-            </div>
-          ))}
-        </div>
+      <div
+        className="flex items-center gap-2 rounded-lg px-3 py-2"
+        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-default)' }}
+      >
+        <Search size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+        <input
+          type="text"
+          placeholder="Search by name, email, department…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="bg-transparent border-none outline-none text-sm flex-1"
+          style={{ color: 'var(--text-primary)' }}
+        />
       </div>
+
+      {/* Info box for super admin */}
+      {isSuperAdmin && (
+        <AIInsight type="info">
+          <strong>Super Admin:</strong> You can create test users for persona testing, assign any role, and deactivate accounts.
+          Creating a user with an email creates a placeholder — they get the assigned role when they first sign in with that Google account.
+        </AIInsight>
+      )}
+
+      {/* Users table */}
+      <Card padding={false}>
+        {loading ? (
+          <div className="flex justify-center py-16"><Spinner size={24} /></div>
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            icon={Users}
+            title="No users found"
+            description={search ? 'Try a different search term.' : 'No users registered yet.'}
+            action={
+              isSuperAdmin && (
+                <Button size="sm" icon={Plus} onClick={() => { setEditUser(null); setShowModal(true) }}>
+                  Add First User
+                </Button>
+              )
+            }
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="nd-table">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Email</th>
+                  <th>Department</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Last Login</th>
+                  {(isSuperAdmin || isItAdmin) && <th>Actions</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(u => {
+                  const lastSeen   = u.lastSeenAt?.toDate?.()
+                  const isMe       = u.id === me?.uid
+                  const roleMeta   = ROLE_META[u.role]
+                  const isInactive = u.active === false
+
+                  return (
+                    <tr
+                      key={u.id}
+                      style={{ opacity: isInactive ? 0.5 : 1 }}
+                    >
+                      {/* Avatar + name */}
+                      <td>
+                        <div className="flex items-center gap-2.5">
+                          <div
+                            className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+                            style={{ background: 'linear-gradient(135deg,#3b62f5,#7c3aed)' }}
+                          >
+                            {u.photoURL
+                              ? <img src={u.photoURL} alt="" className="w-full h-full rounded-full object-cover" />
+                              : u.displayName?.charAt(0) ?? 'U'}
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                              {u.displayName}
+                              {isMe && (
+                                <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full"
+                                  style={{ background: 'var(--accent-subtle)', color: 'var(--accent)' }}>
+                                  You
+                                </span>
+                              )}
+                              {u.isPlaceholder && (
+                                <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full"
+                                  style={{ background: 'var(--amber-subtle, rgba(245,158,11,0.1))', color: 'var(--warning)' }}>
+                                  Pending login
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td>
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          {u.email}
+                        </span>
+                      </td>
+
+                      <td>
+                        <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                          {u.department || '—'}
+                        </span>
+                      </td>
+
+                      {/* Role — editable dropdown for admins */}
+                      <td>
+                        {(isSuperAdmin || isItAdmin) && !isMe ? (
+                          <select
+                            value={u.role}
+                            onChange={e => handleRoleChange(u.id, e.target.value)}
+                            className="nd-input text-xs py-1"
+                            style={{ width: 'auto', minWidth: 130 }}
+                          >
+                            {Object.entries(ROLE_META)
+                              .filter(([key]) => isSuperAdmin || key !== ROLES.SUPER_ADMIN)
+                              .map(([key, meta]) => (
+                                <option key={key} value={key}>
+                                  {ROLE_EMOJI[key]} {meta.label}
+                                </option>
+                              ))}
+                          </select>
+                        ) : (
+                          <span className="flex items-center gap-1.5 text-xs font-medium"
+                            style={{ color: 'var(--text-secondary)' }}>
+                            {ROLE_EMOJI[u.role]} {roleMeta?.label ?? u.role}
+                          </span>
+                        )}
+                      </td>
+
+                      <td>
+                        <span className={clsx(
+                          'text-xs px-2 py-0.5 rounded-full font-medium',
+                          isInactive
+                            ? 'bg-red-500/10 text-red-400 border border-red-500/20'
+                            : 'bg-green-500/10 text-green-400 border border-green-500/20'
+                        )}>
+                          {isInactive ? 'Inactive' : 'Active'}
+                        </span>
+                      </td>
+
+                      <td>
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          {lastSeen
+                            ? formatDistanceToNow(lastSeen, { addSuffix: true })
+                            : u.isPlaceholder ? 'Never signed in' : '—'}
+                        </span>
+                      </td>
+
+                      {(isSuperAdmin || isItAdmin) && (
+                        <td>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => { setEditUser(u); setShowModal(true) }}
+                              className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-[var(--bg-hover)]"
+                              title="Edit user"
+                            >
+                              <Edit2 size={12} style={{ color: 'var(--text-muted)' }} />
+                            </button>
+                            {isSuperAdmin && !isMe && (
+                              <button
+                                onClick={() => handleDelete(u.id, u.displayName)}
+                                disabled={deleting === u.id}
+                                className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-red-500/10"
+                                title={isInactive ? 'Already deactivated' : 'Deactivate user'}
+                              >
+                                {deleting === u.id
+                                  ? <Spinner size={12} />
+                                  : <Trash2 size={12} className="text-red-400" />
+                                }
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {/* Modal */}
+      {showModal && (
+        <UserModal
+          user={editUser}
+          onClose={() => { setShowModal(false); setEditUser(null) }}
+          onSave={handleSave}
+          isSuperAdmin={isSuperAdmin}
+        />
+      )}
     </div>
   )
 }

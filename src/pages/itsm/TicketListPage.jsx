@@ -40,19 +40,14 @@ export default function TicketListPage() {
 
   // Real-time listener
   useEffect(() => {
-    if (!profile) return  // wait for profile to load before subscribing
     const filters = {}
-    // Regular users only see their own tickets (by uid from auth, not profile)
-    if (role === ROLES.USER) filters.requesterId = profile.uid ?? profile.id
+    if (role === ROLES.USER) filters.requesterId = profile?.uid
     const unsub = listenToTickets(filters, (data) => {
       setTickets(data)
       setLoading(false)
-    }, (err) => {
-      console.error('Ticket listener error:', err)
-      setLoading(false)
     })
     return unsub
-  }, [role, profile?.uid, profile?.id])
+  }, [role, profile?.uid])
 
   // Enriched + filtered + sorted
   const filtered = useMemo(() => {

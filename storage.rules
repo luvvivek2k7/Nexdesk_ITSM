@@ -1,0 +1,57 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Helper: get user role from Firestore
+    function role() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('role', 'user');
+    }
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdminPlus() {
+      return signedIn() && role() in ['super_admin', 'it_admin'];
+    }
+
+    function isAgentPlus() {
+      return signedIn() && role() in ['super_admin', 'it_admin', 'it_agent'];
+    }
+
+    // ── User profile photos ──────────────────────────────────────────────────
+    match /avatars/{userId}/{fileName} {
+      allow read:  if signedIn();
+      allow write: if request.auth.uid == userId
+                   && request.resource.size < 2 * 1024 * 1024   // 2MB max
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // ── Ticket attachments ───────────────────────────────────────────────────
+    match /tickets/{ticketId}/{fileName} {
+      allow read:  if signedIn();   // Access controlled at Firestore level
+      allow write: if signedIn()
+                   && request.resource.size < 10 * 1024 * 1024  // 10MB max
+                   && request.resource.contentType.matches('(image|application|text)/.*');
+    }
+
+    // ── Knowledge base assets ────────────────────────────────────────────────
+    match /knowledge/{fileName} {
+      allow read:  if signedIn();
+      allow write: if isAgentPlus()
+                   && request.resource.size < 5 * 1024 * 1024;  // 5MB max
+    }
+
+    // ── Asset management uploads (Phase 2 ITAM) ──────────────────────────────
+    match /assets/{fileName} {
+      allow read:  if signedIn();
+      allow write: if isAdminPlus();
+    }
+
+    // ── Platform assets (logos, icons — admin only) ──────────────────────────
+    match /platform/{fileName} {
+      allow read:  if signedIn();
+      allow write: if isAdminPlus();
+    }
+  }
+}
