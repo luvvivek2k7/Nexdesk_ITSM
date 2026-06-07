@@ -3,6 +3,7 @@
 // System config, language, SLA policies, integrations roadmap
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState }  from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth }   from '@/context/AuthContext'
 import { useTheme }  from '@/context/ThemeContext'
 import { db, doc, setDoc, serverTimestamp } from '@/lib/firebase'
@@ -32,6 +33,7 @@ const SLA_DEFAULTS = {
 export default function SettingsPage() {
   const { profile, role }      = useAuth()
   const { isDark, toggleTheme }= useTheme()
+  const navigate               = useNavigate()
   const isSuperAdmin           = role === ROLES.SUPER_ADMIN
 
   const [lang,   setLang]   = useState('en')
@@ -243,7 +245,8 @@ export default function SettingsPage() {
             { name:'Firebase Auth (Google OAuth)', desc:'User authentication', status:'live',    color:'green'  },
             { name:'Firestore Database',           desc:'Real-time data store', status:'live',   color:'green'  },
             { name:'Firebase Hosting',             desc:'Global CDN hosting',   status:'live',   color:'green'  },
-            { name:'Claude AI API',                desc:'AI suggestions, chatbot', status:'phase2', color:'blue' },
+            { name:'Workflow Automation',          desc:'Auto-assign, escalate', status:'live',  color:'green', action: () => navigate('/admin/workflow') },
+            { name:'Claude AI API',                desc:'AI suggestions, chatbot', status:'phase3', color:'blue' },
             { name:'Twilio Voice / SMS',           desc:'Voicebot, SMS alerts',  status:'phase3', color:'amber' },
             { name:'Google Maps API',              desc:'FSO technician tracking',status:'phase2', color:'blue' },
             { name:'SendGrid Email',               desc:'Transactional emails',   status:'phase2', color:'blue' },
@@ -251,8 +254,10 @@ export default function SettingsPage() {
             { name:'Payroll System',               desc:'Finance module',         status:'phase4', color:'gray'  },
           ].map(i => (
             <div key={i.name}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-lg"
-              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg ${i.action ? 'cursor-pointer hover:bg-[var(--bg-hover)]' : ''}`}
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}
+              onClick={i.action}
+            >
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{i.name}</p>
                 <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{i.desc}</p>
@@ -273,7 +278,7 @@ export default function SettingsPage() {
             { label:'Project',  value: import.meta.env.VITE_FIREBASE_PROJECT_ID ?? 'Not configured' },
             { label:'Auth Domain', value: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ?? 'Not configured' },
             { label:'Environment', value: import.meta.env.MODE ?? 'production' },
-            { label:'Version',  value: '1.0.0 — Phase 1 ITSM' },
+            { label:'Version',  value: '2.1.0 — Phase 2 Live' },
           ].map(({ label, value }) => (
             <div key={label} className="flex justify-between py-2"
               style={{ borderBottom: '1px solid var(--border-subtle)' }}>

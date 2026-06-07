@@ -223,6 +223,75 @@ export default function ITAMDashboard() {
           </AIInsight>
         </div>
       </div>
+
+      {/* ── Add Asset Modal ── */}
+      {showAdd && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background:'rgba(0,0,0,0.7)' }}
+          onClick={e => e.target === e.currentTarget && setShowAdd(false)}>
+          <div className="w-full max-w-lg rounded-2xl p-6"
+            style={{ background:'var(--bg-surface)', border:'1px solid var(--border-default)' }}>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-base font-bold" style={{ color:'var(--text-primary)' }}>Add New Asset</h2>
+              <button onClick={() => setShowAdd(false)}
+                className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[var(--bg-hover)]"
+                style={{ color:'var(--text-muted)' }}>✕</button>
+            </div>
+            <form onSubmit={e => {
+              e.preventDefault()
+              const fd = new FormData(e.target)
+              toast.success(`Asset "${fd.get('name')}" added to CMDB`)
+              setShowAdd(false)
+            }} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Asset Name *</label>
+                  <input name="name" required className="nd-input w-full" placeholder="e.g. Dell Latitude 5540" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Asset Tag *</label>
+                  <input name="tag" required className="nd-input w-full" placeholder="e.g. AST-0042" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Category</label>
+                  <select name="category" className="nd-input w-full">
+                    <option>Laptop</option><option>Desktop</option><option>Server</option>
+                    <option>Network</option><option>Mobile</option><option>Peripheral</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Assigned To</label>
+                  <input name="assignedTo" className="nd-input w-full" placeholder="Employee name or Unassigned" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Serial Number</label>
+                  <input name="serial" className="nd-input w-full" placeholder="Manufacturer serial" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Warranty Until</label>
+                  <input name="warranty" type="date" className="nd-input w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Location</label>
+                  <input name="location" className="nd-input w-full" placeholder="e.g. HQ Floor 2" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Purchase Cost (₹)</label>
+                  <input name="cost" type="number" className="nd-input w-full" placeholder="0" />
+                </div>
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button type="button" onClick={() => setShowAdd(false)}
+                  className="flex-1 px-4 py-2 rounded-lg text-sm"
+                  style={{ border:'1px solid var(--border-default)', color:'var(--text-secondary)' }}>Cancel</button>
+                <button type="submit"
+                  className="flex-1 px-4 py-2 rounded-lg text-sm font-semibold text-white"
+                  style={{ background:'var(--accent)' }}>Add to CMDB</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

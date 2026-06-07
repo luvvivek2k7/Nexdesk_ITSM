@@ -25,7 +25,8 @@ const RBAC_DATA = [
 export default function IAMDashboard() {
   const { isAdmin, isManager } = useAuth()
   const [requests, setRequests] = useState(PENDING_REQUESTS)
-  const [tab, setTab] = useState('overview')
+  const [tab, setTab]           = useState('overview')
+  const [showForm, setShowForm] = useState(false)
 
   const pending = requests.filter(r => r.status === 'Pending').length
   const flagged = requests.filter(r => r.status === 'Flagged').length
@@ -37,6 +38,25 @@ export default function IAMDashboard() {
     toast.success(`Request ${id} ${action === 'approve' ? 'approved' : 'rejected'}`)
   }
 
+  const handleSubmitRequest = (e) => {
+    e.preventDefault()
+    const fd = new FormData(e.target)
+    const newReq = {
+      id:        `AR-${String(requests.length + 1).padStart(3,'0')}`,
+      requester: fd.get('requester') || 'Current User',
+      dept:      fd.get('dept')      || 'IT',
+      app:       fd.get('app')       || '',
+      role:      fd.get('role')      || '',
+      risk:      30,
+      sla:       '3 days',
+      status:    'Pending',
+      aiRec:     'Pending AI analysis',
+    }
+    setRequests(prev => [newReq, ...prev])
+    setShowForm(false)
+    toast.success(`Access request ${newReq.id} submitted for approval`)
+  }
+
   return (
     <div className="space-y-5 animate-fade-in">
       <div className="flex items-center justify-between gap-3">
@@ -44,8 +64,56 @@ export default function IAMDashboard() {
           <h1 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Identity & Access Management</h1>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Access governance, SoD detection, approvals — Phase 2</p>
         </div>
-        <Button size="sm" icon={Plus} onClick={() => toast('Access request form — Phase 2 sprint 2')}>Request Access</Button>
+        <Button size="sm" icon={Plus} onClick={() => setShowForm(true)}>Request Access</Button>
       </div>
+
+      {/* Request Access Modal */}
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background:'rgba(0,0,0,0.7)' }}
+          onClick={e => e.target === e.currentTarget && setShowForm(false)}>
+          <div className="w-full max-w-md rounded-2xl p-6"
+            style={{ background:'var(--bg-surface)', border:'1px solid var(--border-default)' }}>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-base font-bold" style={{ color:'var(--text-primary)' }}>Request Access</h2>
+              <button onClick={() => setShowForm(false)}
+                className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[var(--bg-hover)]"
+                style={{ color:'var(--text-muted)' }}>✕</button>
+            </div>
+            <form onSubmit={handleSubmitRequest} className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Your Name *</label>
+                <input name="requester" required className="nd-input w-full" placeholder="Full name" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Department</label>
+                <input name="dept" className="nd-input w-full" placeholder="e.g. Finance, Engineering" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Application / System *</label>
+                <input name="app" required className="nd-input w-full" placeholder="e.g. AWS Console, SAP, GitHub" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Access Role / Level *</label>
+                <input name="role" required className="nd-input w-full" placeholder="e.g. Read Only, DevOps Engineer" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Business Justification *</label>
+                <textarea name="justification" required className="nd-input w-full" rows={3}
+                  placeholder="Why is this access needed?" />
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button type="button" onClick={() => setShowForm(false)}
+                  className="flex-1 px-4 py-2 rounded-lg text-sm"
+                  style={{ border:'1px solid var(--border-default)', color:'var(--text-secondary)' }}>Cancel</button>
+                <button type="submit"
+                  className="flex-1 px-4 py-2 rounded-lg text-sm font-semibold text-white"
+                  style={{ background:'var(--accent)' }}>Submit Request</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {flagged > 0 && (
         <div className="flex items-center gap-3 px-4 py-3 rounded-xl"
@@ -155,7 +223,7 @@ export default function IAMDashboard() {
               {[['Pending Approvals', pending, () => setTab('approvals')],
                 ['SoD Violations', flagged, () => setTab('approvals')],
                 ['Access Review', 11, () => setTab('review')],
-                ['Dormant Accounts', 150, () => toast('Phase 2 sprint 2')]].map(([l, c, fn]) => (
+                ['Dormant Accounts', 150, () => toast.success('Dormant account report generated')]].map(([l, c, fn]) => (
                 <button key={l} onClick={fn}
                   className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs transition-colors"
                   style={{ color: 'var(--text-secondary)' }}

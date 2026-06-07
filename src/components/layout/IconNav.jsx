@@ -6,7 +6,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Home, Ticket, Monitor, Shield, Users, MapPin,
   Building2, Bell, Settings, Menu, Sun, Moon,
-  Crown, Headphones, BarChart3, Code2, Wrench, User,
+  Crown, Headphones, BarChart3, Code2, Wrench, User, Info,
 } from 'lucide-react'
 import { useAuth }  from '@/context/AuthContext'
 import { useTheme } from '@/context/ThemeContext'
@@ -176,6 +176,21 @@ export default function IconNav({ onToggleSidebar }) {
         >
           <Bell size={15} />
           <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-red-500" />
+        </button>
+
+        {/* About / Support */}
+        <button
+          onClick={() => navigate('/about')}
+          className="w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-150"
+          style={{
+            color:      location.pathname === '/about' ? 'var(--accent)' : 'var(--text-muted)',
+            background: location.pathname === '/about' ? 'var(--accent-subtle)' : 'transparent',
+          }}
+          onMouseEnter={e => { if (location.pathname !== '/about') e.currentTarget.style.background = 'var(--bg-hover)' }}
+          onMouseLeave={e => { if (location.pathname !== '/about') e.currentTarget.style.background = 'transparent' }}
+          title="About / Support"
+        >
+          <Info size={15} />
         </button>
 
         {/* Admin settings — only for admins */}

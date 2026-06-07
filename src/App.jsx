@@ -44,14 +44,19 @@ import FSODashboard from '@/pages/fso/FSODashboard'
 import VisitorDashboard from '@/pages/visitor/VisitorDashboard'
 
 // Admin
-import AdminLayout  from '@/pages/admin/AdminLayout'
-import UsersPage    from '@/pages/admin/UsersPage'
-import RolesPage    from '@/pages/admin/RolesPage'
-import SettingsPage from '@/pages/admin/SettingsPage'
+import AdminLayout           from '@/pages/admin/AdminLayout'
+import UsersPage             from '@/pages/admin/UsersPage'
+import RolesPage             from '@/pages/admin/RolesPage'
+import SettingsPage          from '@/pages/admin/SettingsPage'
+import WorkflowPage          from '@/pages/admin/WorkflowPage'
+import AssignmentGroupsPage  from '@/pages/admin/AssignmentGroupsPage'
 
 // User
 import ProfilePage       from '@/pages/user/ProfilePage'
 import NotificationsPage from '@/pages/user/NotificationsPage'
+
+// About
+import AboutPage from '@/pages/AboutPage'
 
 import { ROLES } from '@/lib/constants'
 
@@ -158,15 +163,18 @@ export default function App() {
           <Route path="admin" element={
             <Protected roles={ADMIN_ROLES}><AdminLayout /></Protected>
           }>
-            <Route index        element={<Navigate to="users" replace />} />
-            <Route path="users"    element={<UsersPage />} />
-            <Route path="roles"    element={<RolesPage />} />
-            <Route path="settings" element={<SettingsPage />} />
+            <Route index             element={<Navigate to="users" replace />} />
+            <Route path="users"      element={<UsersPage />} />
+            <Route path="roles"      element={<RolesPage />} />
+            <Route path="groups"     element={<AssignmentGroupsPage />} />
+            <Route path="workflow"   element={<WorkflowPage />} />
+            <Route path="settings"   element={<SettingsPage />} />
           </Route>
 
           {/* ── User ── */}
           <Route path="profile"       element={<ProfilePage />} />
           <Route path="notifications" element={<NotificationsPage />} />
+          <Route path="about"         element={<AboutPage />} />
 
           {/* Catch-all */}
           <Route path="*" element={<Navigate to="/portal" replace />} />

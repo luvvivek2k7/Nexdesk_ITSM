@@ -68,22 +68,24 @@ export default function HRMSDashboard() {
   const isHR  = [ROLES.SUPER_ADMIN, ROLES.IT_ADMIN, ROLES.HR].includes(role)
   const isMgr = [ROLES.SUPER_ADMIN, ROLES.IT_ADMIN, ROLES.MANAGER, ROLES.HR].includes(role)
 
-  const [tab,    setTab]    = useState('overview')
-  const [search, setSearch] = useState('')
-  const [leaves, setLeaves] = useState(LEAVE_REQUESTS)
+  const [tab,       setTab]       = useState('overview')
+  const [search,    setSearch]    = useState('')
+  const [leaves,    setLeaves]    = useState(LEAVE_REQUESTS)
+  const [employees, setEmployees] = useState(EMPLOYEES)
+  const [showForm,  setShowForm]  = useState(false)
 
-  const filtered = EMPLOYEES.filter(e =>
+  const filtered = employees.filter(e =>
     !search.trim() ||
     e.name.toLowerCase().includes(search.toLowerCase()) ||
     e.dept.toLowerCase().includes(search.toLowerCase()) ||
     e.role.toLowerCase().includes(search.toLowerCase())
   )
 
-  const attritionRisk = EMPLOYEES.filter(e => e.enps !== null && e.enps < 7).length
-  const onLeave       = EMPLOYEES.filter(e => e.status === 'On Leave').length
+  const attritionRisk = employees.filter(e => e.enps !== null && e.enps < 7).length
+  const onLeave       = employees.filter(e => e.status === 'On Leave').length
   const avgENPS       = Math.round(
-    EMPLOYEES.filter(e => e.enps).reduce((s, e) => s + e.enps, 0) /
-    EMPLOYEES.filter(e => e.enps).length
+    employees.filter(e => e.enps).reduce((s, e) => s + e.enps, 0) /
+    (employees.filter(e => e.enps).length || 1)
   )
 
   const handleLeave = (idx, action) => {
@@ -91,6 +93,24 @@ export default function HRMSDashboard() {
       i === idx ? { ...l, status: action === 'approve' ? 'Approved' : 'Rejected' } : l
     ))
     toast.success(`Leave request ${action}d`)
+  }
+
+  const handleAddEmployee = (e) => {
+    e.preventDefault()
+    const fd = new FormData(e.target)
+    const emp = {
+      id:       `EMP-${String(employees.length + 1).padStart(3,'0')}`,
+      name:     fd.get('name'),
+      dept:     fd.get('dept'),
+      role:     fd.get('empRole'),
+      status:   'Active',
+      joinDate: fd.get('joinDate') || new Date().toISOString().slice(0,10),
+      manager:  fd.get('manager') || '—',
+      enps:     null,
+    }
+    setEmployees(prev => [...prev, emp])
+    setShowForm(false)
+    toast.success(`${emp.name} added to employee directory`)
   }
 
   return (
@@ -108,9 +128,58 @@ export default function HRMSDashboard() {
         </div>
         <div className="flex gap-2">
           {isHR && <Button variant="ghost" size="sm" icon={Download}>Export</Button>}
-          {isHR && <Button size="sm" icon={UserPlus} onClick={() => toast('Employee onboarding form — coming soon')}>Add Employee</Button>}
+          {isHR && <Button size="sm" icon={UserPlus} onClick={() => setShowForm(true)}>Add Employee</Button>}
         </div>
       </div>
+
+      {/* Add Employee Modal */}
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background:'rgba(0,0,0,0.7)' }}
+          onClick={e => e.target === e.currentTarget && setShowForm(false)}>
+          <div className="w-full max-w-md rounded-2xl p-6"
+            style={{ background:'var(--bg-surface)', border:'1px solid var(--border-default)' }}>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-base font-bold" style={{ color:'var(--text-primary)' }}>Add Employee</h2>
+              <button onClick={() => setShowForm(false)}
+                className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[var(--bg-hover)]"
+                style={{ color:'var(--text-muted)' }}>✕</button>
+            </div>
+            <form onSubmit={handleAddEmployee} className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Full Name *</label>
+                <input name="name" required className="nd-input w-full" placeholder="e.g. Priya Sharma" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Department *</label>
+                  <input name="dept" required className="nd-input w-full" placeholder="e.g. Engineering" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Designation *</label>
+                  <input name="empRole" required className="nd-input w-full" placeholder="e.g. Software Engineer" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Join Date</label>
+                  <input name="joinDate" type="date" className="nd-input w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Reporting Manager</label>
+                  <input name="manager" className="nd-input w-full" placeholder="Manager name" />
+                </div>
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button type="button" onClick={() => setShowForm(false)}
+                  className="flex-1 px-4 py-2 rounded-lg text-sm"
+                  style={{ border:'1px solid var(--border-default)', color:'var(--text-secondary)' }}>Cancel</button>
+                <button type="submit"
+                  className="flex-1 px-4 py-2 rounded-lg text-sm font-semibold text-white"
+                  style={{ background:'var(--accent)' }}>Add Employee</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Attrition risk alert */}
       {attritionRisk > 0 && isMgr && (
@@ -285,7 +354,19 @@ export default function HRMSDashboard() {
             <h3 className="text-sm font-semibold" style={{ color:'var(--text-primary)' }}>
               Leave Requests — {leaves.filter(l => l.status === 'Pending').length} pending
             </h3>
-            <Button size="sm" icon={Plus} onClick={() => toast('Leave request form — coming soon')}>
+            <Button size="sm" icon={Plus} onClick={() => {
+              const from = prompt('Leave start date (YYYY-MM-DD):')
+              const to   = prompt('Leave end date (YYYY-MM-DD):')
+              const type = prompt('Leave type (Annual / Sick / Casual):') || 'Annual'
+              if (from && to) {
+                setLeaves(prev => [{
+                  name: 'Current User', type, from, to,
+                  days: Math.max(1, Math.round((new Date(to)-new Date(from))/(86400000))+1),
+                  status:'Pending'
+                }, ...prev])
+                toast.success('Leave request submitted for approval')
+              }
+            }}>
               Apply Leave
             </Button>
           </div>

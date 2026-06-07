@@ -76,10 +76,11 @@ export default function FSODashboard() {
   const [tab,      setTab]      = useState('command')
   const [orders,   setOrders]   = useState(WORK_ORDERS)
   const [selected, setSelected] = useState(null)
+  const [showForm, setShowForm] = useState(false)
 
   const available  = ENGINEERS.filter(e => e.status === 'available').length
-  const slaRisk    = WORK_ORDERS.filter(w => !['Completed','Cancelled'].includes(w.status) && w.priority !== 'P4').length
-  const totalCost  = WORK_ORDERS.filter(w => w.status === 'Completed')
+  const slaRisk    = orders.filter(w => !['Completed','Cancelled'].includes(w.status) && w.priority !== 'P4').length
+  const totalCost  = orders.filter(w => w.status === 'Completed')
     .reduce((s, w) => s + parseInt(w.cost.replace(/[₹,]/g, '')), 0)
 
   const handleAssign = (woId, engName) => {
@@ -88,6 +89,24 @@ export default function FSODashboard() {
     ))
     toast.success(`${woId} assigned to ${engName}`)
     setSelected(null)
+  }
+
+  const handleCreateWO = (e) => {
+    e.preventDefault()
+    const fd = new FormData(e.target)
+    const wo = {
+      id:       `WO-${String(orders.length + 1).padStart(3,'0')}`,
+      title:    fd.get('title'),
+      priority: fd.get('priority') || 'P3',
+      status:   'Pending',
+      engineer: fd.get('engineer') || 'Unassigned',
+      sla:      fd.get('priority') === 'P1' ? '4h' : fd.get('priority') === 'P2' ? '8h' : '24h',
+      cost:     '₹0',
+      type:     fd.get('type') || 'INCIDENT',
+    }
+    setOrders(prev => [wo, ...prev])
+    setShowForm(false)
+    toast.success(`Work order ${wo.id} created`)
   }
 
   return (
@@ -105,11 +124,73 @@ export default function FSODashboard() {
         </div>
         <div className="flex gap-2">
           <Button variant="ghost" size="sm" icon={RefreshCw}>Refresh</Button>
-          <Button size="sm" icon={Plus} onClick={() => toast('Work order creation — Phase 2 sprint 2')}>
+          <Button size="sm" icon={Plus} onClick={() => setShowForm(true)}>
             New Work Order
           </Button>
         </div>
       </div>
+
+      {/* New Work Order Modal */}
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background:'rgba(0,0,0,0.7)' }}
+          onClick={e => e.target === e.currentTarget && setShowForm(false)}>
+          <div className="w-full max-w-md rounded-2xl p-6"
+            style={{ background:'var(--bg-surface)', border:'1px solid var(--border-default)' }}>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-base font-bold" style={{ color:'var(--text-primary)' }}>New Work Order</h2>
+              <button onClick={() => setShowForm(false)}
+                className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[var(--bg-hover)]"
+                style={{ color:'var(--text-muted)' }}>✕</button>
+            </div>
+            <form onSubmit={handleCreateWO} className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Title *</label>
+                <input name="title" required className="nd-input w-full" placeholder="e.g. Network switch replacement Floor 3" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Type</label>
+                  <select name="type" className="nd-input w-full">
+                    <option value="INCIDENT">Incident</option>
+                    <option value="MAINTENANCE">Maintenance</option>
+                    <option value="INSTALLATION">Installation</option>
+                    <option value="REPAIR">Repair</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Priority</label>
+                  <select name="priority" className="nd-input w-full">
+                    <option value="P3">P3 — Medium</option>
+                    <option value="P2">P2 — High</option>
+                    <option value="P1">P1 — Critical</option>
+                    <option value="P4">P4 — Low</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Assign Engineer</label>
+                <select name="engineer" className="nd-input w-full">
+                  <option value="Unassigned">Unassigned</option>
+                  {ENGINEERS.map(e => <option key={e.id} value={e.name}>{e.name} ({e.status})</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Location / Site</label>
+                <input name="location" className="nd-input w-full" placeholder="e.g. HQ Floor 2, Chennai Office" />
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button type="button" onClick={() => setShowForm(false)}
+                  className="flex-1 px-4 py-2 rounded-lg text-sm"
+                  style={{ border:'1px solid var(--border-default)', color:'var(--text-secondary)' }}>Cancel</button>
+                <button type="submit"
+                  className="flex-1 px-4 py-2 rounded-lg text-sm font-semibold text-white"
+                  style={{ background:'var(--accent)' }}>Create Work Order</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* SLA alert */}
       {ENGINEERS.some(e => e.status === 'sla_risk') && (

@@ -2,136 +2,134 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── HELPER: get caller role safely ───────────────────────────────────────
-    function role() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'user');
-    }
+    // ── Helpers ──────────────────────────────────────────────────────────────
+    function isAuth()       { return request.auth != null; }
+    function uid()          { return request.auth.uid; }
+    function userDoc()      { return get(/databases/$(database)/documents/users/$(uid())); }
+    function role()         { return userDoc().data.role; }
+    function isSuperAdmin() { return role() == 'super_admin'; }
+    function isAdmin()      { return role() in ['super_admin', 'it_admin']; }
+    function isAgent()      { return role() in ['super_admin', 'it_admin', 'it_agent', 'manager']; }
+    function isHR()         { return role() in ['super_admin', 'it_admin', 'hr', 'manager']; }
+    function isFSO()        { return role() in ['super_admin', 'it_admin', 'field_engineer', 'manager']; }
+    function isOwner(userId){ return uid() == userId; }
 
-    function signedIn() {
-      return request.auth != null;
-    }
-
-    function isSuperAdmin() {
-      return signedIn() && role() == 'super_admin';
-    }
-
-    function isAdminPlus() {
-      return signedIn() && role() in ['super_admin', 'it_admin'];
-    }
-
-    function isAgentPlus() {
-      return signedIn() && role() in ['super_admin', 'it_admin', 'it_agent'];
-    }
-
-    function isManagerPlus() {
-      return signedIn() && role() in ['super_admin', 'it_admin', 'manager'];
-    }
-
-    function isOwner(uid) {
-      return signedIn() && request.auth.uid == uid;
-    }
-
-    // ── USERS ────────────────────────────────────────────────────────────────
+    // ── Users ─────────────────────────────────────────────────────────────────
     match /users/{userId} {
-      // Anyone signed in can READ their own profile
-      allow read: if isOwner(userId) || isAdminPlus() || isManagerPlus();
-
-      // Allow creating own profile on first login (bootstrapping)
-      allow create: if isOwner(userId);
-
-      // User can update own profile EXCEPT role field
-      // Admins can update anything including role
-      allow update: if
-        (isOwner(userId) &&
-          !('role' in request.resource.data.diff(resource.data).affectedKeys()))
-        || isAdminPlus();
-
-      allow delete: if isSuperAdmin();
+      allow read:   if isAuth();
+      allow create: if isAuth() && isAdmin();
+      allow update: if isAuth() && (isAdmin() || isOwner(userId));
+      allow delete: if isAuth() && isSuperAdmin();
     }
 
-    // ── META (used for first-user detection) ─────────────────────────────────
-    match /meta/{doc} {
-      allow read:  if signedIn();
-      allow write: if signedIn();  // Needed for first-login bootstrap
-    }
-
-    // ── TICKETS ──────────────────────────────────────────────────────────────
+    // ── Tickets (ITSM) ────────────────────────────────────────────────────────
     match /tickets/{ticketId} {
-      // Agents/admins/managers see all tickets
-      // Users see only their own
-      allow read: if isAgentPlus()
-                  || isManagerPlus()
-                  || (signedIn() && resource.data.requesterId == request.auth.uid);
-
-      // Any signed-in user can create a ticket (as themselves)
-      allow create: if signedIn()
-                    && request.resource.data.requesterId == request.auth.uid;
-
-      // Agents/admins can update any field
-      // Users can only add comments to their own tickets
-      allow update: if isAgentPlus()
-                    || (signedIn()
-                        && resource.data.requesterId == request.auth.uid
-                        && request.resource.data.diff(resource.data)
-                             .affectedKeys()
-                             .hasOnly(['comments', 'updatedAt']));
-
-      allow delete: if isAdminPlus();
+      allow read:   if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth() && isAgent();
+      allow delete: if isAuth() && isSuperAdmin();
     }
 
-    // ── KNOWLEDGE BASE ───────────────────────────────────────────────────────
-    match /knowledge/{articleId} {
-      allow read:  if signedIn();
-      allow write: if isAgentPlus();
+    // ── Ticket Comments ───────────────────────────────────────────────────────
+    match /tickets/{ticketId}/comments/{commentId} {
+      allow read:   if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth() && isOwner(resource.data.authorId);
+      allow delete: if isAuth() && isAdmin();
     }
 
-    // ── SLA POLICIES ─────────────────────────────────────────────────────────
-    match /sla_policies/{policyId} {
-      allow read:  if signedIn();
-      allow write: if isAdminPlus();
-    }
-
-    // ── NOTIFICATIONS ────────────────────────────────────────────────────────
-    match /notifications/{notifId} {
-      allow read:   if signedIn() && resource.data.userId == request.auth.uid;
-      allow create: if isAgentPlus();
-      allow update: if signedIn() && resource.data.userId == request.auth.uid;
-      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
-    }
-
-    // ── AUDIT LOGS (immutable) ────────────────────────────────────────────────
-    match /audit_logs/{logId} {
-      allow read:             if isAdminPlus();
-      allow create:           if signedIn();
-      allow update, delete:   if false;
-    }
-
-    // ── WORKFLOWS (Phase 2) ──────────────────────────────────────────────────
-    match /workflows/{wfId} {
-      allow read:  if isAgentPlus();
-      allow write: if isAdminPlus();
-    }
-
-    // ── ASSETS (Phase 2 ITAM) ────────────────────────────────────────────────
+    // ── Assets (ITAM) ─────────────────────────────────────────────────────────
     match /assets/{assetId} {
-      allow read:  if isAgentPlus() || isManagerPlus();
-      allow write: if isAdminPlus();
+      allow read:   if isAuth();
+      allow create: if isAuth() && isAgent();
+      allow update: if isAuth() && isAgent();
+      allow delete: if isAuth() && isAdmin();
     }
 
-    // ── ACCESS REQUESTS (Phase 2 IAM) ────────────────────────────────────────
-    match /access_requests/{reqId} {
-      allow read: if isAdminPlus()
-                  || isManagerPlus()
-                  || (signedIn() && resource.data.requesterId == request.auth.uid);
-      allow create: if signedIn();
-      allow update: if isAdminPlus() || isManagerPlus();
-      allow delete: if isAdminPlus();
+    // ── Access Requests (IAM) ─────────────────────────────────────────────────
+    match /accessRequests/{reqId} {
+      allow read:   if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth() && isAgent();
+      allow delete: if isAuth() && isAdmin();
     }
 
-    // ── CATALOG ITEMS ────────────────────────────────────────────────────────
-    match /catalog/{itemId} {
-      allow read:  if signedIn();
-      allow write: if isAdminPlus();
+    // ── Work Orders (FSO) ─────────────────────────────────────────────────────
+    match /workOrders/{woId} {
+      allow read:   if isAuth();
+      allow create: if isAuth() && isFSO();
+      allow update: if isAuth() && isFSO();
+      allow delete: if isAuth() && isAdmin();
+    }
+
+    // ── Visitors ──────────────────────────────────────────────────────────────
+    match /visitors/{visId} {
+      allow read:   if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth() && isAgent();
+      allow delete: if isAuth() && isAdmin();
+    }
+
+    // ── Employees (HRMS) ──────────────────────────────────────────────────────
+    match /employees/{empId} {
+      allow read:   if isAuth();
+      allow create: if isAuth() && isHR();
+      allow update: if isAuth() && isHR();
+      allow delete: if isAuth() && isAdmin();
+    }
+
+    // ── Assignment Groups ─────────────────────────────────────────────────────
+    match /groups/{grpId} {
+      allow read:   if isAuth();
+      allow create: if isAuth() && isAdmin();
+      allow update: if isAuth() && isAdmin();
+      allow delete: if isAuth() && isSuperAdmin();
+    }
+
+    // ── Workflows ─────────────────────────────────────────────────────────────
+    match /workflows/{wfId} {
+      allow read:   if isAuth();
+      allow create: if isAuth() && isAdmin();
+      allow update: if isAuth() && isAdmin();
+      allow delete: if isAuth() && isSuperAdmin();
+    }
+
+    // ── Audit Logs — append-only, no edit/delete ──────────────────────────────
+    match /auditLogs/{logId} {
+      allow read:   if isAuth() && isAdmin();
+      allow create: if isAuth();
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // ── Reports ───────────────────────────────────────────────────────────────
+    match /reports/{rptId} {
+      allow read:   if isAuth() && isAgent();
+      allow create: if isAuth() && isAgent();
+      allow update: if isAuth() && isAgent();
+      allow delete: if isAuth() && isAdmin();
+    }
+
+    // ── SLA Policies ──────────────────────────────────────────────────────────
+    match /slaPolicies/{slaId} {
+      allow read:   if isAuth();
+      allow write:  if isAuth() && isAdmin();
+    }
+
+    // ── Knowledge Base ────────────────────────────────────────────────────────
+    match /knowledgeBase/{artId} {
+      allow read:   if isAuth();
+      allow create: if isAuth() && isAgent();
+      allow update: if isAuth() && isAgent();
+      allow delete: if isAuth() && isAdmin();
+    }
+
+    // ── Notifications ─────────────────────────────────────────────────────────
+    match /notifications/{notifId} {
+      allow read:   if isAuth() && (isAdmin() || resource.data.userId == uid());
+      allow create: if isAuth() && isAgent();
+      allow update: if isAuth() && (isAdmin() || resource.data.userId == uid());
+      allow delete: if isAuth() && isAdmin();
     }
   }
 }

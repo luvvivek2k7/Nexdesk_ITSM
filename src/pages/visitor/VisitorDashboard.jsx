@@ -74,6 +74,27 @@ export default function VisitorDashboard() {
     v.host.toLowerCase().includes(search.toLowerCase())
   )
 
+  const handlePreRegister = (e) => {
+    e.preventDefault()
+    const fd = new FormData(e.target)
+    const name = fd.get('visitorName') || ''
+    const newVisitor = {
+      id: `VIS-${String(visitors.length + 1).padStart(3,'0')}`,
+      name,
+      company: fd.get('company') || '—',
+      host:    fd.get('host')    || '—',
+      floor:   fd.get('zone')   || 'Fl 1 / Zone A (Lobby)',
+      checkin: new Date().toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' }) + ' (Pre-Reg)',
+      badge:   'Pre-Registered',
+      risk:    'Low',
+      photo:   name.trim().split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase() || 'VX',
+    }
+    setVisitors(prev => [newVisitor, ...prev])
+    setTab('roster')
+    toast.success(`${name} pre-registered. QR invite sent to host.`)
+    e.target.reset()
+  }
+
   const handleDeactivate = (id) => {
     setVisitors(prev => prev.map(v => v.id === id ? { ...v, badge:'Expired' } : v))
     toast.success(`Badge deactivated for ${visitors.find(v=>v.id===id)?.name}`)
@@ -337,25 +358,26 @@ export default function VisitorDashboard() {
           {/* Pre-register form */}
           <Card>
             <CardHeader title="Pre-Register New Visitor" subtitle="FR-H1 — Host employee portal" />
+            <form onSubmit={handlePreRegister}>
             <div className="grid grid-cols-2 gap-3">
               {[
-                { label:'Visitor Name', placeholder:'Sarah Jones' },
-                { label:'Company',      placeholder:'TechCorp Ltd' },
-                { label:'Host Employee',placeholder:'Robert Smith' },
-                { label:'Purpose',      placeholder:'Client meeting' },
+                { label:'Visitor Name',  placeholder:'Sarah Jones',    name:'visitorName', required:true  },
+                { label:'Company',       placeholder:'TechCorp Ltd',   name:'company',     required:false },
+                { label:'Host Employee', placeholder:'Robert Smith',   name:'host',        required:true  },
+                { label:'Purpose',       placeholder:'Client meeting', name:'purpose',     required:false },
               ].map(f => (
                 <div key={f.label} className="space-y-1.5">
-                  <label className="block text-xs font-medium" style={{ color:'var(--text-secondary)' }}>{f.label}</label>
-                  <input className="nd-input text-sm" placeholder={f.placeholder} />
+                  <label className="block text-xs font-medium" style={{ color:'var(--text-secondary)' }}>{f.label}{f.required && ' *'}</label>
+                  <input name={f.name} required={f.required} className="nd-input text-sm" placeholder={f.placeholder} />
                 </div>
               ))}
               <div className="space-y-1.5">
                 <label className="block text-xs font-medium" style={{ color:'var(--text-secondary)' }}>Visit Date & Time</label>
-                <input type="datetime-local" className="nd-input text-sm" />
+                <input type="datetime-local" name="visitTime" className="nd-input text-sm" />
               </div>
               <div className="space-y-1.5">
                 <label className="block text-xs font-medium" style={{ color:'var(--text-secondary)' }}>Access Zone</label>
-                <select className="nd-input text-sm">
+                <select name="zone" className="nd-input text-sm">
                   <option>Fl 1 / Zone A (Lobby)</option>
                   <option>Fl 2 / Zone C (Meeting)</option>
                   <option>Fl 3 / Zone A (Finance)</option>
@@ -364,11 +386,12 @@ export default function VisitorDashboard() {
               </div>
             </div>
             <div className="flex gap-3 mt-4">
-              <Button className="flex-1" onClick={() => toast('Pre-registration sent — visitor will receive QR code via email')}>
-                Register & Send Invite
+              <Button type="submit" className="flex-1">
+                Register &amp; Send Invite
               </Button>
-              <Button variant="ghost">Cancel</Button>
+              <Button type="button" variant="ghost" onClick={() => setTab('overview')}>Cancel</Button>
             </div>
+            </form>
           </Card>
         </div>
       )}

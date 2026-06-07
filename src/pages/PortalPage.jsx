@@ -22,11 +22,11 @@ import { formatDistanceToNow } from 'date-fns'
 // ── Module cards data ─────────────────────────────────────────────────────────
 const MODULE_CARDS = [
   { id:'itsm',    label:'ITSM',           icon:'🎫', path:'/itsm',    color:'blue',   phase:1, desc:'Incidents, requests, SLA'    },
-  { id:'itam',    label:'ITAM',           icon:'🖥',  path:'/itam',   color:'cyan',   phase:2, desc:'Assets, CMDB, lifecycle'      },
-  { id:'iam',     label:'IAM',            icon:'🔐', path:'/iam',     color:'violet', phase:2, desc:'Access governance, approvals'  },
-  { id:'hrms',    label:'HRMS',           icon:'👥', path:'/hrms',    color:'green',  phase:3, desc:'People, onboarding, leave'     },
-  { id:'fso',     label:'Field Services', icon:'🔧', path:'/fso',     color:'amber',  phase:2, desc:'Dispatch, work orders, map'    },
-  { id:'visitor', label:'Visitor Mgmt',   icon:'🏢', path:'/visitor', color:'orange', phase:2, desc:'Premises, check-in, badges'    },
+  { id:'itam',    label:'ITAM',           icon:'🖥',  path:'/itam',   color:'cyan',   phase:1, desc:'Assets, CMDB, lifecycle'      },
+  { id:'iam',     label:'IAM',            icon:'🔐', path:'/iam',     color:'violet', phase:1, desc:'Access governance, approvals'  },
+  { id:'hrms',    label:'HRMS',           icon:'👥', path:'/hrms',    color:'green',  phase:1, desc:'People, onboarding, leave'     },
+  { id:'fso',     label:'Field Services', icon:'🔧', path:'/fso',     color:'amber',  phase:1, desc:'Dispatch, work orders, map'    },
+  { id:'visitor', label:'Visitor Mgmt',   icon:'🏢', path:'/visitor', color:'orange', phase:1, desc:'Premises, check-in, badges'    },
   { id:'chatbot', label:'Chatbot',        icon:'💬', path:'/chatbot', color:'pink',   phase:3, desc:'AI ticket creation, NLP'       },
   { id:'payroll', label:'Payroll',        icon:'💰', path:'/payroll', color:'gray',   phase:3, desc:'Payslips, tax, HR sync'        },
 ]
@@ -197,7 +197,7 @@ export default function PortalPage() {
               <h2 className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
                 All Modules
               </h2>
-              <Badge variant="default">{MODULE_CARDS.filter(m => m.phase === 1).length} live · {MODULE_CARDS.filter(m => m.phase > 1).length} planned</Badge>
+              <Badge variant="green">Phase 2 Live · {MODULE_CARDS.filter(m => m.phase === 1).length} of {MODULE_CARDS.length} active</Badge>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {MODULE_CARDS.map(mod => {
@@ -209,7 +209,7 @@ export default function PortalPage() {
                     className={`rounded-xl p-3.5 text-left transition-all duration-150 group ${
                       isLive
                         ? 'hover:scale-[1.03] hover:shadow-lg cursor-pointer'
-                        : 'opacity-60 cursor-not-allowed'
+                        : 'opacity-50 cursor-not-allowed'
                     }`}
                     style={{
                       background:  'var(--bg-surface)',
@@ -232,7 +232,7 @@ export default function PortalPage() {
                     )}
                     {isLive && (
                       <div className="mt-1.5">
-                        <Badge variant="green" className="text-[9px]">Live</Badge>
+                        <Badge variant="green" className="text-[9px]">● Live</Badge>
                       </div>
                     )}
                   </button>
@@ -358,9 +358,9 @@ export default function PortalPage() {
             <CardHeader title="Announcements" />
             <div className="space-y-2">
               <NoticeCard
-                type="info"
-                title="NexDesk Phase 1 Live"
-                body="ITSM module is fully operational. ITAM and IAM modules are coming in Phase 2."
+                type="success"
+                title="🎉 NexDesk Phase 2 Live"
+                body="ITAM, IAM, HRMS, Field Services and Visitor Management are now fully operational."
               />
               <NoticeCard
                 type="success"
@@ -372,6 +372,13 @@ export default function PortalPage() {
                   type="warning"
                   title="SLA Policy Reminder"
                   body="P1 incidents require response within 1 hour. Ensure tickets are assigned immediately."
+                />
+              )}
+              {isAdmin && (
+                <NoticeCard
+                  type="info"
+                  title="Workflow Designer Available"
+                  body="Build automation rules under Admin → Workflow Automation."
                 />
               )}
             </div>
