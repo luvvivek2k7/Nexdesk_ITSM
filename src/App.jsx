@@ -50,6 +50,7 @@ import RolesPage             from '@/pages/admin/RolesPage'
 import SettingsPage          from '@/pages/admin/SettingsPage'
 import WorkflowPage          from '@/pages/admin/WorkflowPage'
 import AssignmentGroupsPage  from '@/pages/admin/AssignmentGroupsPage'
+import AuditLogPage          from '@/pages/admin/AuditLogPage'
 
 // User
 import ProfilePage       from '@/pages/user/ProfilePage'
@@ -169,6 +170,7 @@ export default function App() {
             <Route path="groups"     element={<AssignmentGroupsPage />} />
             <Route path="workflow"   element={<WorkflowPage />} />
             <Route path="settings"   element={<SettingsPage />} />
+            <Route path="audit"      element={<AuditLogPage />} />
           </Route>
 
           {/* ── User ── */}

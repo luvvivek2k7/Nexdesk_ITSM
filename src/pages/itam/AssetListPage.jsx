@@ -85,7 +85,7 @@ export default function AssetListPage() {
           <div className="flex justify-center py-16"><Spinner /></div>
         ) : filtered.length === 0 ? (
           <EmptyState title="No assets found" description="Add your first asset or adjust filters" icon={Monitor}
-            action={can('MANAGE_ITAM') ? { label: 'Add Asset', onClick: () => navigate('/itam/assets/new') } : null} />
+            action={can('MANAGE_ITAM') ? <Button size="sm" icon={Plus} onClick={() => navigate('/itam/assets/new')}>Add Asset</Button> : null} />
         ) : (
           <div className="overflow-x-auto">
             <table className="nd-table">

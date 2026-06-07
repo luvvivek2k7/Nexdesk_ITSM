@@ -2,6 +2,7 @@
 // NexDesk — Roles & Permissions Page
 // Visual permission matrix for all personas
 // ─────────────────────────────────────────────────────────────────────────────
+import React from 'react'
 import { Check, X } from 'lucide-react'
 import { ROLES, ROLE_META, PERMISSIONS } from '@/lib/constants'
 import { Card, CardHeader, Badge } from '@/components/shared/index.jsx'
@@ -136,9 +137,9 @@ export default function RolesPage() {
             </thead>
             <tbody>
               {PERMISSION_GROUPS.map(group => (
-                <>
+                <React.Fragment key={group.label}>
                   {/* Group header */}
-                  <tr key={`grp-${group.label}`}>
+                  <tr>
                     <td
                       colSpan={ROLE_ORDER.length + 1}
                       className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider"
@@ -191,7 +192,7 @@ export default function RolesPage() {
                       })}
                     </tr>
                   ))}
-                </>
+                </React.Fragment>
               ))}
             </tbody>
           </table>

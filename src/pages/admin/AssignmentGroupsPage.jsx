@@ -243,7 +243,7 @@ export default function AssignmentGroupsPage() {
         : groups.length === 0 && !showForm
           ? <EmptyState title="No assignment groups yet" icon={Users}
               description="Create groups to organise your support team. Agents are assigned tickets through groups."
-              action={{ label: 'Create First Group', onClick: () => setShowForm(true) }} />
+              action={<Button icon={Plus} onClick={() => setShowForm(true)}>Create First Group</Button>} />
           : groups.map(g => (
               <GroupCard key={g.id} group={g} allUsers={users} onDeleted={() => {}} />
             ))
