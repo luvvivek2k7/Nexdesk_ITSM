@@ -221,8 +221,12 @@ export default function WorkflowPage() {
 
       {/* List */}
       {workflows.length === 0 && !showForm
-        ? <EmptyState title="No workflows yet" description="Create automation rules to route and assign tickets automatically" icon={Zap}
-            action={{ label: 'Create First Workflow', onClick: () => setShowForm(true) }} />
+        ? <EmptyState 
+  title="No workflows yet" 
+  description="Create automation rules to route and assign tickets automatically" 
+  icon={Zap}
+  action={<Button icon={Plus} onClick={() => setShowForm(true)}>Create First Workflow</Button>} 
+/>
         : workflows.map(wf => <WorkflowRow key={wf.id} wf={wf} onToggle={handleToggle} onDelete={handleDelete} />)}
     </div>
   )
