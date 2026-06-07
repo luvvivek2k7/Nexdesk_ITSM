@@ -15,8 +15,12 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
+    // Content-hash filenames ensure browsers always load new bundles after deploy
     rollupOptions: {
       output: {
+        entryFileNames:   'assets/[name]-[hash].js',
+        chunkFileNames:   'assets/[name]-[hash].js',
+        assetFileNames:   'assets/[name]-[hash][extname]',
         manualChunks: {
           'vendor-react':    ['react', 'react-dom', 'react-router-dom'],
           'vendor-firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore'],
