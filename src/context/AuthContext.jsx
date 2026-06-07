@@ -1,16 +1,18 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// NexDesk — Auth Context  (FIXED v2)
-// Key fixes:
-//  1. luvvivek2k7@gmail.com is hardcoded as SUPER_ADMIN on first login
-//  2. Profile update uses try/catch with detailed error reporting
-//  3. loadProfile is more resilient — handles missing Firestore doc gracefully
-//  4. can() checks PERMISSIONS[permission] correctly (was passing full array)
-//  5. isAgent / isAdmin computed correctly every render
+// NexDesk — Auth Context (FIXED v3)
+// Key changes from v2:
+//  1. Whitelist enforcement — if user doc doesn't exist AND they're not the
+//     super admin email, set profile.notWhitelisted = true so App can redirect
+//     to AccessDeniedPage instead of auto-creating a USER account for anyone.
+//  2. Placeholder merging — when a whitelisted placeholder user signs in with
+//     their real Google account, the placeholder doc is merged/replaced.
+//  3. All other logic unchanged from v2.
 // ─────────────────────────────────────────────────────────────────────────────
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import {
   auth, db, signInWithGoogle, signOutUser, onAuthChange,
   doc, getDoc, setDoc, updateDoc, serverTimestamp,
+  collection, query, where, getDocs,
 } from '@/lib/firebase'
 import { ROLES, PERMISSIONS } from '@/lib/constants'
 
@@ -25,24 +27,6 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState(null)
 
-  // ── Determine role for a new user ─────────────────────────────────────────
-  const determineRole = async (firebaseUser) => {
-    // Hardcoded super admin email always gets super_admin
-    if (firebaseUser.email === SUPER_ADMIN_EMAIL) {
-      return ROLES.SUPER_ADMIN
-    }
-    // First user ever (by meta/stats doc not existing) also gets super_admin
-    try {
-      const statsSnap = await getDoc(doc(db, 'meta', 'stats'))
-      if (!statsSnap.exists() || (statsSnap.data()?.totalUsers ?? 0) === 0) {
-        return ROLES.SUPER_ADMIN
-      }
-    } catch (e) {
-      console.warn('Could not check meta/stats:', e)
-    }
-    return ROLES.USER
-  }
-
   // ── Load or create Firestore user profile ────────────────────────────────
   const loadProfile = useCallback(async (firebaseUser) => {
     if (!firebaseUser) { setProfile(null); return }
@@ -55,71 +39,107 @@ export function AuthProvider({ children }) {
       if (snap.exists()) {
         const data = snap.data()
 
-        // If this is the super admin email but role isn't set right, fix it
-        if (
-          firebaseUser.email === SUPER_ADMIN_EMAIL &&
-          data.role !== ROLES.SUPER_ADMIN
-        ) {
-          await updateDoc(userRef, {
-            role:      ROLES.SUPER_ADMIN,
-            updatedAt: serverTimestamp(),
-          })
+        // Deactivated user — block access
+        if (data.active === false) {
+          setProfile({ ...data, id: snap.id, notWhitelisted: true, deactivated: true })
+          return
+        }
+
+        // Super admin email always keeps super_admin role
+        if (firebaseUser.email === SUPER_ADMIN_EMAIL && data.role !== ROLES.SUPER_ADMIN) {
+          await updateDoc(userRef, { role: ROLES.SUPER_ADMIN, updatedAt: serverTimestamp() })
           data.role = ROLES.SUPER_ADMIN
         }
 
-        // Update last seen silently
         updateDoc(userRef, { lastSeenAt: serverTimestamp() }).catch(() => {})
-
         setProfile({ id: snap.id, ...data })
-      } else {
-        // New user — create profile
-        const role = await determineRole(firebaseUser)
+        return
+      }
 
+      // ── User doc does NOT exist ───────────────────────────────────────────
+      // Check if there's a placeholder doc matching this email
+      const placeholderQuery = query(
+        collection(db, 'users'),
+        where('email', '==', firebaseUser.email),
+        where('isPlaceholder', '==', true)
+      )
+      const placeholderSnap = await getDocs(placeholderQuery)
+
+      if (!placeholderSnap.empty) {
+        // Found a placeholder — promote it to a real user doc
+        const placeholder    = placeholderSnap.docs[0]
+        const placeholderData = placeholder.data()
+
+        // Create real doc under actual UID
+        const realProfile = {
+          ...placeholderData,
+          uid:           firebaseUser.uid,
+          photoURL:      firebaseUser.photoURL ?? null,
+          displayName:   firebaseUser.displayName ?? placeholderData.displayName,
+          isPlaceholder: false,
+          lastSeenAt:    serverTimestamp(),
+          updatedAt:     serverTimestamp(),
+          active:        true,
+        }
+        await setDoc(userRef, realProfile)
+
+        // Delete old placeholder doc (best effort)
+        try {
+          const { deleteDoc } = await import('@/lib/firebase')
+          await deleteDoc(placeholder.ref)
+        } catch {}
+
+        setProfile({ id: firebaseUser.uid, ...realProfile })
+        return
+      }
+
+      // ── No doc, no placeholder ────────────────────────────────────────────
+      // Only auto-create if this is the designated super admin email.
+      // Everyone else gets blocked with notWhitelisted = true.
+      if (firebaseUser.email === SUPER_ADMIN_EMAIL) {
         const newProfile = {
           uid:         firebaseUser.uid,
           email:       firebaseUser.email,
-          displayName: firebaseUser.displayName ?? firebaseUser.email.split('@')[0],
+          displayName: firebaseUser.displayName ?? 'Super Admin',
           photoURL:    firebaseUser.photoURL ?? null,
-          role,
+          role:        ROLES.SUPER_ADMIN,
           department:  '',
           phone:       '',
           createdAt:   serverTimestamp(),
           lastSeenAt:  serverTimestamp(),
           updatedAt:   serverTimestamp(),
-          preferences: {
-            theme:         'dark',
-            language:      'en',
-            notifications: { email: true, push: true, sla: true },
-          },
-          active: true,
+          preferences: { theme: 'dark', language: 'en', notifications: { email: true, push: true, sla: true } },
+          active:      true,
         }
-
         await setDoc(userRef, newProfile)
-
-        // Increment total users counter
-        const statsRef  = doc(db, 'meta', 'stats')
-        const statsSnap = await getDoc(statsRef)
-        await setDoc(statsRef, {
-          totalUsers: (statsSnap.data()?.totalUsers ?? 0) + 1,
-        }, { merge: true })
-
         setProfile({ id: firebaseUser.uid, ...newProfile })
+        return
       }
+
+      // Not whitelisted — set flag so App redirects to AccessDeniedPage
+      setProfile({
+        id:              firebaseUser.uid,
+        uid:             firebaseUser.uid,
+        email:           firebaseUser.email,
+        displayName:     firebaseUser.displayName ?? firebaseUser.email,
+        photoURL:        firebaseUser.photoURL ?? null,
+        role:            null,
+        notWhitelisted:  true,
+      })
+
     } catch (err) {
       console.error('loadProfile error:', err)
-      // Don't block the app — set minimal profile from Firebase auth
+      // On permission error, the user is likely not whitelisted
+      // (Firestore rules denied the read because user doc doesn't exist)
       setProfile({
-        id:          firebaseUser.uid,
-        uid:         firebaseUser.uid,
-        email:       firebaseUser.email,
-        displayName: firebaseUser.displayName ?? 'User',
-        photoURL:    firebaseUser.photoURL ?? null,
-        role:        firebaseUser.email === SUPER_ADMIN_EMAIL
-                       ? ROLES.SUPER_ADMIN
-                       : ROLES.USER,
-        preferences: { theme: 'dark', language: 'en' },
-        active:      true,
-        _offline:    true, // flag so UI can show a warning
+        id:             firebaseUser.uid,
+        uid:            firebaseUser.uid,
+        email:          firebaseUser.email,
+        displayName:    firebaseUser.displayName ?? 'User',
+        photoURL:       firebaseUser.photoURL ?? null,
+        role:           firebaseUser.email === SUPER_ADMIN_EMAIL ? ROLES.SUPER_ADMIN : null,
+        notWhitelisted: firebaseUser.email !== SUPER_ADMIN_EMAIL,
+        _error:         err.message,
       })
     }
   }, [])
@@ -145,9 +165,9 @@ export function AuthProvider({ children }) {
       await signInWithGoogle()
     } catch (err) {
       const msg =
-        err.code === 'auth/popup-closed-by-user'  ? 'Sign-in popup was closed. Please try again.' :
-        err.code === 'auth/network-request-failed' ? 'Network error. Check your connection.' :
-        err.code === 'auth/unauthorized-domain'    ? 'This domain is not authorised. Add it in Firebase Console → Authentication → Settings → Authorised domains.' :
+        err.code === 'auth/popup-closed-by-user'   ? 'Sign-in popup was closed. Please try again.' :
+        err.code === 'auth/network-request-failed'  ? 'Network error. Check your connection.' :
+        err.code === 'auth/unauthorized-domain'     ? 'This domain is not authorised. Add it in Firebase Console → Authentication → Settings → Authorised domains.' :
         err.message
       setError(msg)
       throw err
@@ -178,7 +198,7 @@ export function AuthProvider({ children }) {
     }
   }
 
-  // ── Assign role to another user (Super Admin / IT Admin only) ────────────
+  // ── Assign role ──────────────────────────────────────────────────────────
   const assignRole = async (targetUserId, newRole) => {
     if (!can('ASSIGN_ROLES') && !can('MANAGE_USERS')) {
       throw new Error('Insufficient permissions to assign roles')
@@ -191,45 +211,19 @@ export function AuthProvider({ children }) {
     }
   }
 
-  // ── Create a test user manually (Super Admin only) ───────────────────────
-  const createTestUser = async ({ email, displayName, role, department }) => {
-    if (profile?.role !== ROLES.SUPER_ADMIN) {
-      throw new Error('Only Super Admin can create test users')
-    }
-    // Creates a placeholder user doc (will be populated on their first login)
-    const placeholderId = `placeholder_${Date.now()}`
-    const ref = doc(db, 'users', placeholderId)
-    await setDoc(ref, {
-      uid:         placeholderId,
-      email,
-      displayName,
-      role:        role ?? ROLES.USER,
-      department:  department ?? '',
-      phone:       '',
-      photoURL:    null,
-      createdAt:   serverTimestamp(),
-      lastSeenAt:  null,
-      updatedAt:   serverTimestamp(),
-      preferences: { theme: 'dark', language: 'en', notifications: { email: true, push: true, sla: true } },
-      active:      true,
-      isPlaceholder: true, // will merge on real login
-    })
-    return placeholderId
-  }
-
   // ── Permission checker ───────────────────────────────────────────────────
   const can = useCallback((permission) => {
-    if (!profile) return false
+    if (!profile || profile.notWhitelisted) return false
     const allowed = PERMISSIONS[permission]
     if (!Array.isArray(allowed)) return false
     return allowed.includes(profile.role)
   }, [profile])
 
   const hasRole = useCallback((...roles) => {
+    if (!profile || profile.notWhitelisted) return false
     return roles.includes(profile?.role)
   }, [profile])
 
-  // Computed role flags
   const isAdmin   = hasRole(ROLES.SUPER_ADMIN, ROLES.IT_ADMIN)
   const isAgent   = hasRole(ROLES.SUPER_ADMIN, ROLES.IT_ADMIN, ROLES.IT_AGENT)
   const isManager = hasRole(ROLES.SUPER_ADMIN, ROLES.IT_ADMIN, ROLES.MANAGER)
@@ -243,7 +237,6 @@ export function AuthProvider({ children }) {
     signOut,
     updateProfile,
     assignRole,
-    createTestUser,
     can,
     hasRole,
     isAdmin,

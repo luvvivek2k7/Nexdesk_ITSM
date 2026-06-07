@@ -58,6 +58,7 @@ import NotificationsPage from '@/pages/user/NotificationsPage'
 
 // About
 import AboutPage from '@/pages/AboutPage'
+import AccessDeniedPage from '@/pages/AccessDeniedPage'
 
 import { ROLES } from '@/lib/constants'
 
@@ -66,6 +67,8 @@ function Protected({ children, roles }) {
   const { user, profile, loading } = useAuth()
   if (loading)  return <LoadingScreen />
   if (!user)    return <Navigate to="/login" replace />
+  // Block users not provisioned by Super Admin
+  if (profile?.notWhitelisted) return <AccessDeniedPage />
   if (roles && profile?.role && !roles.includes(profile.role)) {
     return <Navigate to="/portal" replace />
   }

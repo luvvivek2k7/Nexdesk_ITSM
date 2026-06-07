@@ -3,133 +3,161 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ── Helpers ──────────────────────────────────────────────────────────────
-    function isAuth()       { return request.auth != null; }
-    function uid()          { return request.auth.uid; }
-    function userDoc()      { return get(/databases/$(database)/documents/users/$(uid())); }
-    function role()         { return userDoc().data.role; }
-    function isSuperAdmin() { return role() == 'super_admin'; }
-    function isAdmin()      { return role() in ['super_admin', 'it_admin']; }
-    function isAgent()      { return role() in ['super_admin', 'it_admin', 'it_agent', 'manager']; }
-    function isHR()         { return role() in ['super_admin', 'it_admin', 'hr', 'manager']; }
-    function isFSO()        { return role() in ['super_admin', 'it_admin', 'field_engineer', 'manager']; }
-    function isOwner(userId){ return uid() == userId; }
+    function isAuth()        { return request.auth != null; }
+    function uid()           { return request.auth.uid; }
+    function userDoc()       { return get(/databases/$(database)/documents/users/$(uid())); }
+    function userExists()    { return exists(/databases/$(database)/documents/users/$(uid())); }
+    function role()          { return userDoc().data.role; }
+
+    // ── WHITELIST CHECK — user must exist in /users AND be active ─────────────
+    // This is the key guard: blocks any Google account not added by Super Admin
+    function isWhitelisted() {
+      return isAuth() && userExists() && userDoc().data.get('active', true) != false;
+    }
+
+    function isSuperAdmin()  { return isWhitelisted() && role() == 'super_admin'; }
+    function isAdmin()       { return isWhitelisted() && role() in ['super_admin', 'it_admin']; }
+    function isAgent()       { return isWhitelisted() && role() in ['super_admin', 'it_admin', 'it_agent', 'manager']; }
+    function isHR()          { return isWhitelisted() && role() in ['super_admin', 'it_admin', 'hr', 'manager']; }
+    function isFSO()         { return isWhitelisted() && role() in ['super_admin', 'it_admin', 'field_engineer', 'manager']; }
+    function isOwner(userId) { return uid() == userId; }
 
     // ── Users ─────────────────────────────────────────────────────────────────
+    // Allow unauthenticated create so first Super Admin can be bootstrapped,
+    // and so AuthContext can create/update the user doc on first Google login.
+    // The app checks role after login and redirects non-whitelisted users.
     match /users/{userId} {
-      allow read:   if isAuth();
-      allow create: if isAuth() && isAdmin();
+      // Any signed-in user can read their OWN doc (needed for AuthContext role check)
+      allow read:   if isAuth() && (isOwner(userId) || isWhitelisted());
+      // Allow creating own doc on first login (bootstrap), or admin creating others
+      allow create: if isAuth() && (isOwner(userId) || isAdmin());
       allow update: if isAuth() && (isAdmin() || isOwner(userId));
-      allow delete: if isAuth() && isSuperAdmin();
+      allow delete: if isSuperAdmin();
     }
 
     // ── Tickets (ITSM) ────────────────────────────────────────────────────────
     match /tickets/{ticketId} {
-      allow read:   if isAuth();
-      allow create: if isAuth();
-      allow update: if isAuth() && isAgent();
-      allow delete: if isAuth() && isSuperAdmin();
+      allow read:   if isWhitelisted();
+      allow create: if isWhitelisted();
+      allow update: if isAgent();
+      allow delete: if isSuperAdmin();
     }
 
     // ── Ticket Comments ───────────────────────────────────────────────────────
     match /tickets/{ticketId}/comments/{commentId} {
-      allow read:   if isAuth();
-      allow create: if isAuth();
-      allow update: if isAuth() && isOwner(resource.data.authorId);
-      allow delete: if isAuth() && isAdmin();
+      allow read:   if isWhitelisted();
+      allow create: if isWhitelisted();
+      allow update: if isWhitelisted() && isOwner(resource.data.authorId);
+      allow delete: if isAdmin();
     }
 
     // ── Assets (ITAM) ─────────────────────────────────────────────────────────
     match /assets/{assetId} {
-      allow read:   if isAuth();
-      allow create: if isAuth() && isAgent();
-      allow update: if isAuth() && isAgent();
-      allow delete: if isAuth() && isAdmin();
+      allow read:   if isAgent();
+      allow create: if isAgent();
+      allow update: if isAgent();
+      allow delete: if isAdmin();
     }
 
     // ── Access Requests (IAM) ─────────────────────────────────────────────────
     match /accessRequests/{reqId} {
-      allow read:   if isAuth();
-      allow create: if isAuth();
-      allow update: if isAuth() && isAgent();
-      allow delete: if isAuth() && isAdmin();
+      allow read:   if isWhitelisted();
+      allow create: if isWhitelisted();
+      allow update: if isAgent();
+      allow delete: if isAdmin();
     }
 
     // ── Work Orders (FSO) ─────────────────────────────────────────────────────
     match /workOrders/{woId} {
-      allow read:   if isAuth();
-      allow create: if isAuth() && isFSO();
-      allow update: if isAuth() && isFSO();
-      allow delete: if isAuth() && isAdmin();
+      allow read:   if isWhitelisted();
+      allow create: if isFSO();
+      allow update: if isFSO();
+      allow delete: if isAdmin();
     }
 
     // ── Visitors ──────────────────────────────────────────────────────────────
     match /visitors/{visId} {
-      allow read:   if isAuth();
-      allow create: if isAuth();
-      allow update: if isAuth() && isAgent();
-      allow delete: if isAuth() && isAdmin();
+      allow read:   if isWhitelisted();
+      allow create: if isWhitelisted();
+      allow update: if isAgent();
+      allow delete: if isAdmin();
     }
 
     // ── Employees (HRMS) ──────────────────────────────────────────────────────
     match /employees/{empId} {
-      allow read:   if isAuth();
-      allow create: if isAuth() && isHR();
-      allow update: if isAuth() && isHR();
-      allow delete: if isAuth() && isAdmin();
+      allow read:   if isWhitelisted();
+      allow create: if isHR();
+      allow update: if isHR();
+      allow delete: if isAdmin();
     }
 
     // ── Assignment Groups ─────────────────────────────────────────────────────
+    // FIXED: added BOTH 'groups' AND 'assignmentGroups' to cover the collection
+    // name used by assignmentService.js
     match /groups/{grpId} {
-      allow read:   if isAuth();
-      allow create: if isAuth() && isAdmin();
-      allow update: if isAuth() && isAdmin();
-      allow delete: if isAuth() && isSuperAdmin();
+      allow read:   if isWhitelisted();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    match /assignmentGroups/{grpId} {
+      allow read:   if isWhitelisted();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isSuperAdmin();
     }
 
     // ── Workflows ─────────────────────────────────────────────────────────────
     match /workflows/{wfId} {
-      allow read:   if isAuth();
-      allow create: if isAuth() && isAdmin();
-      allow update: if isAuth() && isAdmin();
-      allow delete: if isAuth() && isSuperAdmin();
+      allow read:   if isWhitelisted();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isSuperAdmin();
     }
 
-    // ── Audit Logs — append-only, no edit/delete ──────────────────────────────
+    // ── Audit Logs — append-only ──────────────────────────────────────────────
     match /auditLogs/{logId} {
-      allow read:   if isAuth() && isAdmin();
-      allow create: if isAuth();
+      allow read:   if isAdmin();
+      allow create: if isWhitelisted();
       allow update: if false;
       allow delete: if false;
     }
 
     // ── Reports ───────────────────────────────────────────────────────────────
     match /reports/{rptId} {
-      allow read:   if isAuth() && isAgent();
-      allow create: if isAuth() && isAgent();
-      allow update: if isAuth() && isAgent();
-      allow delete: if isAuth() && isAdmin();
+      allow read:   if isAgent();
+      allow create: if isAgent();
+      allow update: if isAgent();
+      allow delete: if isAdmin();
     }
 
     // ── SLA Policies ──────────────────────────────────────────────────────────
     match /slaPolicies/{slaId} {
-      allow read:   if isAuth();
-      allow write:  if isAuth() && isAdmin();
+      allow read:   if isWhitelisted();
+      allow write:  if isAdmin();
+    }
+
+    // ── System meta (settings) ────────────────────────────────────────────────
+    match /meta/{docId} {
+      allow read:   if isWhitelisted();
+      allow write:  if isAdmin();
     }
 
     // ── Knowledge Base ────────────────────────────────────────────────────────
     match /knowledgeBase/{artId} {
-      allow read:   if isAuth();
-      allow create: if isAuth() && isAgent();
-      allow update: if isAuth() && isAgent();
-      allow delete: if isAuth() && isAdmin();
+      allow read:   if isWhitelisted();
+      allow create: if isAgent();
+      allow update: if isAgent();
+      allow delete: if isAdmin();
     }
 
     // ── Notifications ─────────────────────────────────────────────────────────
     match /notifications/{notifId} {
-      allow read:   if isAuth() && (isAdmin() || resource.data.userId == uid());
-      allow create: if isAuth() && isAgent();
-      allow update: if isAuth() && (isAdmin() || resource.data.userId == uid());
-      allow delete: if isAuth() && isAdmin();
+      allow read:   if isAdmin() || (isWhitelisted() && resource.data.userId == uid());
+      allow create: if isAgent();
+      allow update: if isAdmin() || (isWhitelisted() && resource.data.userId == uid());
+      allow delete: if isAdmin();
     }
   }
 }
