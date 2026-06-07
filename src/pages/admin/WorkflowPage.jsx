@@ -6,7 +6,7 @@
 import { useState, useEffect } from 'react'
 import { toast } from 'react-hot-toast'
 import { Plus, Trash2, ToggleLeft, ToggleRight, Zap, ChevronDown } from 'lucide-react'
-import { db, collection, getDocs, addDoc, updateDoc, deleteDoc, doc, orderBy, query, serverTimestamp } from '@/lib/firebase'
+import { db, collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from '@/lib/firebase'
 import { CATEGORIES, TICKET_TYPES, ROLES } from '@/lib/constants'
 import { Card, CardHeader, Button, Badge, EmptyState } from '@/components/shared/index.jsx'
 
@@ -84,9 +84,21 @@ export default function WorkflowPage() {
   const [form, setForm]           = useState(EMPTY_WF)
   const [saving, setSaving]       = useState(false)
 
-  const load = () => getDocs(query(collection(db, 'workflows'), orderBy('createdAt', 'desc')))
-    .then(s => setWorkflows(s.docs.map(d => ({ id: d.id, ...d.data() }))))
-    .catch(console.error)
+  const load = () => getDocs(collection(db, 'workflows'))
+    .then(s => {
+      const docs = s.docs.map(d => ({ id: d.id, ...d.data() }))
+      // Sort client-side by createdAt descending to avoid needing a Firestore index
+      docs.sort((a, b) => {
+        const ta = a.createdAt?.toMillis?.() ?? 0
+        const tb = b.createdAt?.toMillis?.() ?? 0
+        return tb - ta
+      })
+      setWorkflows(docs)
+    })
+    .catch(err => {
+      console.error('Workflow load error:', err)
+      setWorkflows([])
+    })
 
   useEffect(() => { load() }, [])
 

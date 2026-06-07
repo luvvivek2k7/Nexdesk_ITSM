@@ -7,7 +7,7 @@ import {
   AlertTriangle, GitBranch, Package, RefreshCw, BarChart3,
   Users, Settings, Shield, ChevronRight, Workflow,
   MonitorDot, Database, Lock, Map, Building2, Bell,
-  Wrench, FileText, Star, Home,
+  Wrench, FileText, Star, Home, Info,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { ROLES, PERMISSIONS } from '@/lib/constants'
@@ -30,6 +30,7 @@ function getSidebarConfig(base, role) {
           { path:'/itsm/knowledge',   label:'Knowledge Base',  icon:BookOpen     },
           { path:'/itsm/tickets',     label:'My Tickets',      icon:Ticket, badge:true },
           { path:'/notifications',    label:'Notifications',   icon:Bell         },
+          { path:'/about',            label:'About / Support', icon:Info         },
         ],
       }],
     },
@@ -137,11 +138,12 @@ function getSidebarConfig(base, role) {
       sections: [{
         label: 'Admin',
         items: [
-          { path:'/admin/users',    label:'Users',           icon:Users,    show:isAdmin   },
-          { path:'/admin/roles',    label:'Roles & Perms',   icon:Shield,   show:isAdmin   },
-          { path:'/admin/settings', label:'System Settings', icon:Settings, show:isAdmin   },
-          { path:'/admin/workflow', label:'Workflow Builder', icon:Workflow, show:isSuper   },
-          { path:'/admin/audit',    label:'Audit Log',        icon:FileText, show:isAdmin   },
+          { path:'/admin/users',    label:'Users',              icon:Users,    show:isAdmin   },
+          { path:'/admin/groups',   label:'Assignment Groups',  icon:Users,    show:isAdmin   },
+          { path:'/admin/roles',    label:'Roles & Perms',      icon:Shield,   show:isAdmin   },
+          { path:'/admin/workflow', label:'Workflow Automation', icon:Workflow, show:isAdmin   },
+          { path:'/admin/settings', label:'System Settings',    icon:Settings, show:isAdmin   },
+          { path:'/admin/audit',    label:'Audit Log',          icon:FileText, show:isAdmin   },
         ],
       }],
     },
