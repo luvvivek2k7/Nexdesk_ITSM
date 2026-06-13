@@ -1,53 +1,104 @@
 {
   "indexes": [
-    {
-      "collectionGroup": "tickets",
+    { "collectionGroup": "tickets",
       "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "requesterId", "order": "ASCENDING"  },
-        { "fieldPath": "createdAt",   "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "tickets",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "tickets",
       "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "assigneeId",  "order": "ASCENDING"  },
-        { "fieldPath": "createdAt",   "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "tickets",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "tickets",
       "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "status",      "order": "ASCENDING"  },
-        { "fieldPath": "createdAt",   "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "tickets",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "assigneeId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "tickets",
       "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "priority",    "order": "ASCENDING"  },
-        { "fieldPath": "createdAt",   "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "tickets",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "requesterId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "tickets",
       "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "ticketDate",  "order": "ASCENDING"  },
-        { "fieldPath": "createdAt",   "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "tickets",
+      "fields": [{ "fieldPath": "requesterId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "tickets",
       "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "slaBreached", "order": "ASCENDING"  },
-        { "fieldPath": "createdAt",   "order": "DESCENDING" }
-      ]
-    }
+      "fields": [{ "fieldPath": "assigneeId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "tickets",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "tickets",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "ticketDate", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "tickets",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "slaBreached", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "assignment_groups",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "name", "order": "ASCENDING" }] },
+    { "collectionGroup": "assignment_groups",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "active", "order": "ASCENDING" }, { "fieldPath": "name", "order": "ASCENDING" }] },
+    { "collectionGroup": "workflows",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "active", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "workflows",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "employees",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "name", "order": "ASCENDING" }] },
+    { "collectionGroup": "employees",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "department", "order": "ASCENDING" }, { "fieldPath": "name", "order": "ASCENDING" }] },
+    { "collectionGroup": "workOrders",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "workOrders",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "workOrders",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "assigneeId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "accessRequests",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "accessRequests",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "requesterId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "visitors",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "visitDate", "order": "DESCENDING" }] },
+    { "collectionGroup": "visitors",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "visitDate", "order": "DESCENDING" }] },
+    { "collectionGroup": "assets",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "type", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "assets",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "audit_logs",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "timestamp", "order": "DESCENDING" }] },
+    { "collectionGroup": "audit_logs",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "module", "order": "ASCENDING" }, { "fieldPath": "timestamp", "order": "DESCENDING" }] },
+    { "collectionGroup": "notifications",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "userId", "order": "ASCENDING" }, { "fieldPath": "read", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "notifications",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "userId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "role", "order": "ASCENDING" }, { "fieldPath": "displayName", "order": "ASCENDING" }] },
+    { "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "department", "order": "ASCENDING" }, { "fieldPath": "displayName", "order": "ASCENDING" }] },
+    { "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "active", "order": "ASCENDING" }, { "fieldPath": "displayName", "order": "ASCENDING" }] },
+    { "collectionGroup": "custom_roles",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "name", "order": "ASCENDING" }] },
+    { "collectionGroup": "sla_policies",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "orgId", "order": "ASCENDING" }, { "fieldPath": "priority", "order": "ASCENDING" }] }
   ],
   "fieldOverrides": []
 }

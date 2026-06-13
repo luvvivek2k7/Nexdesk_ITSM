@@ -1,41 +1,26 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// NexDesk — HRMS Dashboard (Phase 2)
-// HR Management: employee directory, onboarding, leave, performance
+// NexDesk — HRMS Dashboard  (Sprint 1 — Firestore-backed)
 // ─────────────────────────────────────────────────────────────────────────────
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
 import {
   Users, UserPlus, Calendar, TrendingUp,
   Plus, Search, Download, Star, AlertTriangle,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
-import { ROLES } from '@/lib/constants'
+import { ROLES }   from '@/lib/constants'
 import {
-  Card, CardHeader, StatCard, Badge, Button, AIInsight, Input,
+  Card, CardHeader, StatCard, Badge, Button, AIInsight, Input, Spinner, EmptyState,
 } from '@/components/shared/index.jsx'
 import {
   BarChart, Bar, LineChart, Line, ResponsiveContainer,
   XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts'
 import { toast } from 'react-hot-toast'
-
-const EMPLOYEES = [
-  { id:'EMP-001', name:'Ananya Sharma',   dept:'Marketing',   role:'Senior Manager',    status:'Active',    joinDate:'2020-03-15', manager:'Suresh Kumar',  enps:8  },
-  { id:'EMP-002', name:'Ravi Kumar',      dept:'IT Ops',      role:'Lead Engineer',      status:'Active',    joinDate:'2019-07-01', manager:'Admin User',    enps:7  },
-  { id:'EMP-003', name:'Priya Nair',      dept:'IT Support',  role:'Service Desk Agent', status:'Active',    joinDate:'2021-11-20', manager:'Ravi Kumar',    enps:9  },
-  { id:'EMP-004', name:'Suresh Kumar',    dept:'Operations',  role:'Operations Director',status:'Active',    joinDate:'2017-05-10', manager:'Admin User',    enps:7  },
-  { id:'EMP-005', name:'Meera Pillai',    dept:'Finance',     role:'Finance Analyst',    status:'On Leave',  joinDate:'2022-02-28', manager:'Suresh Kumar',  enps:6  },
-  { id:'EMP-006', name:'Kiran Mehta',     dept:'Engineering', role:'Software Engineer',  status:'Active',    joinDate:'2023-01-09', manager:'Ravi Kumar',    enps:8  },
-  { id:'EMP-007', name:'Alice Chen',      dept:'Finance',     role:'Finance Executive',  status:'Active',    joinDate:'2020-09-15', manager:'Suresh Kumar',  enps:7  },
-  { id:'EMP-008', name:'Dev Patel',       dept:'Engineering', role:'DevOps Engineer',    status:'Probation', joinDate:'2024-11-01', manager:'Ravi Kumar',    enps:null },
-]
-
-const LEAVE_REQUESTS = [
-  { emp:'Meera Pillai',  type:'Sick Leave',   from:'2025-05-08', to:'2025-05-12', days:3, status:'Approved' },
-  { emp:'Kiran Mehta',   type:'Annual Leave', from:'2025-05-20', to:'2025-05-23', days:4, status:'Pending'  },
-  { emp:'Alice Chen',    type:'Work from Home',from:'2025-05-14',to:'2025-05-14', days:1, status:'Approved' },
-  { emp:'Dev Patel',     type:'Annual Leave', from:'2025-06-02', to:'2025-06-06', days:5, status:'Pending'  },
-]
+import {
+  listenToEmployees, createEmployee,
+  updateEmployee, deactivateEmployee,
+  listenToLeaveRequests, createLeaveRequest, updateLeaveStatus,
+} from '@/lib/hrmsService'
 
 const HEADCOUNT_TREND = [
   { month:'Nov', count:41 }, { month:'Dec', count:42 }, { month:'Jan', count:43 },
@@ -64,54 +49,88 @@ const ChartTip = ({ active, payload, label }) => {
 }
 
 export default function HRMSDashboard() {
-  const { role } = useAuth()
+  const { role, profile, orgId, isHR: _isHR, audit } = useAuth()
   const isHR  = [ROLES.SUPER_ADMIN, ROLES.IT_ADMIN, ROLES.HR].includes(role)
   const isMgr = [ROLES.SUPER_ADMIN, ROLES.IT_ADMIN, ROLES.MANAGER, ROLES.HR].includes(role)
 
   const [tab,       setTab]       = useState('overview')
   const [search,    setSearch]    = useState('')
-  const [leaves,    setLeaves]    = useState(LEAVE_REQUESTS)
-  const [employees, setEmployees] = useState(EMPLOYEES)
+  const [employees, setEmployees] = useState([])
+  const [leaves,    setLeaves]    = useState([])
+  const [loading,   setLoading]   = useState(true)
   const [showForm,  setShowForm]  = useState(false)
+  const [showLeaveForm, setShowLeaveForm] = useState(false)
+
+  // ── Real-time Firestore listeners ────────────────────────────────────────
+  useEffect(() => {
+    if (!orgId) return
+    setLoading(true)
+    const unsubEmp = listenToEmployees(orgId, data => { setEmployees(data); setLoading(false) })
+    const unsubLve = listenToLeaveRequests(orgId, data => setLeaves(data))
+    return () => { unsubEmp(); unsubLve() }
+  }, [orgId])
 
   const filtered = employees.filter(e =>
     !search.trim() ||
-    e.name.toLowerCase().includes(search.toLowerCase()) ||
-    e.dept.toLowerCase().includes(search.toLowerCase()) ||
-    e.role.toLowerCase().includes(search.toLowerCase())
+    e.name?.toLowerCase().includes(search.toLowerCase()) ||
+    e.department?.toLowerCase().includes(search.toLowerCase()) ||
+    e.designation?.toLowerCase().includes(search.toLowerCase())
   )
 
   const attritionRisk = employees.filter(e => e.enps !== null && e.enps < 7).length
   const onLeave       = employees.filter(e => e.status === 'On Leave').length
-  const avgENPS       = Math.round(
-    employees.filter(e => e.enps).reduce((s, e) => s + e.enps, 0) /
-    (employees.filter(e => e.enps).length || 1)
-  )
+  const avgENPS       = employees.filter(e => e.enps).length
+    ? Math.round(employees.filter(e => e.enps).reduce((s, e) => s + e.enps, 0) / employees.filter(e => e.enps).length)
+    : 0
 
-  const handleLeave = (idx, action) => {
-    setLeaves(prev => prev.map((l, i) =>
-      i === idx ? { ...l, status: action === 'approve' ? 'Approved' : 'Rejected' } : l
-    ))
-    toast.success(`Leave request ${action}d`)
+  const handleLeave = async (id, action) => {
+    try {
+      await updateLeaveStatus(id, action === 'approve' ? 'Approved' : 'Rejected', profile)
+      audit(action === 'approve' ? 'leave_approved' : 'leave_rejected', 'HRMS', id)
+      toast.success(`Leave request ${action}d`)
+    } catch { toast.error('Failed to update leave request') }
   }
 
-  const handleAddEmployee = (e) => {
+  const handleAddEmployee = async (e) => {
     e.preventDefault()
     const fd = new FormData(e.target)
-    const emp = {
-      id:       `EMP-${String(employees.length + 1).padStart(3,'0')}`,
-      name:     fd.get('name'),
-      dept:     fd.get('dept'),
-      role:     fd.get('empRole'),
-      status:   'Active',
-      joinDate: fd.get('joinDate') || new Date().toISOString().slice(0,10),
-      manager:  fd.get('manager') || '—',
-      enps:     null,
-    }
-    setEmployees(prev => [...prev, emp])
-    setShowForm(false)
-    toast.success(`${emp.name} added to employee directory`)
+    try {
+      const empData = {
+        name:        fd.get('name'),
+        email:       fd.get('email'),
+        department:  fd.get('department'),
+        designation: fd.get('designation'),
+        joinDate:    fd.get('joinDate') || new Date().toISOString().slice(0,10),
+        manager:     fd.get('manager') || '',
+        phone:       fd.get('phone') || '',
+        status:      'Active',
+        enps:        null,
+      }
+      await createEmployee(orgId, empData, profile.uid)
+      audit('employee_created', 'HRMS', empData.name)
+      setShowForm(false)
+      toast.success(`${empData.name} added to directory`)
+      e.target.reset()
+    } catch (err) { toast.error('Failed to add employee: ' + err.message) }
   }
+
+  const handleLeaveRequest = async (e) => {
+    e.preventDefault()
+    const fd = new FormData(e.target)
+    try {
+      await createLeaveRequest(orgId, {
+        type:     fd.get('type'),
+        from:     fd.get('from'),
+        to:       fd.get('to'),
+        days:     Math.max(1, Math.round((new Date(fd.get('to')) - new Date(fd.get('from'))) / 86400000) + 1),
+        reason:   fd.get('reason'),
+      }, profile)
+      setShowLeaveForm(false)
+      toast.success('Leave request submitted')
+    } catch (err) { toast.error('Failed: ' + err.message) }
+  }
+
+
 
   return (
     <div className="space-y-5 animate-fade-in">
@@ -321,8 +340,8 @@ export default function HRMSDashboard() {
                           </div>
                         </div>
                       </td>
-                      <td><span className="text-xs" style={{ color:'var(--text-secondary)' }}>{e.dept}</span></td>
-                      <td><span className="text-xs" style={{ color:'var(--text-secondary)' }}>{e.role}</span></td>
+                      <td><span className="text-xs" style={{ color:'var(--text-secondary)' }}>{e.department}</span></td>
+                      <td><span className="text-xs" style={{ color:'var(--text-secondary)' }}>{e.designation}</span></td>
                       <td><span className="text-xs" style={{ color:'var(--text-muted)' }}>{e.manager}</span></td>
                       <td>
                         <Badge variant={e.status==='Active'?'green':e.status==='On Leave'?'amber':e.status==='Probation'?'violet':'default'} className="text-[10px]">
@@ -392,8 +411,8 @@ export default function HRMSDashboard() {
                       <td>
                         {l.status === 'Pending' && (
                           <div className="flex gap-1.5">
-                            <Button size="sm" variant="success" style={{ fontSize:10 }} onClick={() => handleLeave(i,'approve')}>Approve</Button>
-                            <Button size="sm" variant="danger"  style={{ fontSize:10 }} onClick={() => handleLeave(i,'reject')}>Reject</Button>
+                            <Button size="sm" variant="success" style={{ fontSize:10 }} onClick={() => handleLeave(l.id,'approve')}>Approve</Button>
+                            <Button size="sm" variant="danger"  style={{ fontSize:10 }} onClick={() => handleLeave(l.id,'reject')}>Reject</Button>
                           </div>
                         )}
                       </td>

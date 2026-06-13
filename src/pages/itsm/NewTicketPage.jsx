@@ -2,13 +2,15 @@
 // NexDesk — New Ticket Page (FIXED)
 // Fixes: ticket creation now works, requesterId set correctly, AI suggestion
 // ─────────────────────────────────────────────────────────────────────────────
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { toast }       from 'react-hot-toast'
 import { ArrowLeft, Sparkles, Mic, Send, Info } from 'lucide-react'
 import { useAuth }          from '@/context/AuthContext'
 import { createTicket }     from '@/lib/ticketService'
 import { CATEGORIES, TICKET_TYPES, SLA_POLICIES, ROLES } from '@/lib/constants'
+import { getAgents }        from '@/lib/userService'
+import { getGroups }        from '@/lib/assignmentService'
 import {
   Card, CardHeader, Button, Input, Select, Textarea, AIInsight, PriorityBadge,
 } from '@/components/shared/index.jsx'
@@ -37,7 +39,7 @@ function suggestFromText(title = '', desc = '') {
 export default function NewTicketPage() {
   const navigate             = useNavigate()
   const [searchParams]       = useSearchParams()
-  const { user, profile, isAdmin, isAgent } = useAuth()
+  const { user, profile, isAdmin, isAgent, orgId } = useAuth()
 
   const [form, setForm] = useState({
     type:         searchParams.get('type')     ?? 'INCIDENT',
@@ -47,11 +49,21 @@ export default function NewTicketPage() {
     priority:     'P3',
     assigneeId:   '',
     assigneeName: '',
+    groupId:      '',
+    groupName:    '',
     tags:         '',
   })
+  const [agents,       setAgents]       = useState([])
+  const [groups,       setGroups]       = useState([])
   const [aiSuggestion, setAISuggestion] = useState(null)
   const [saving, setSaving]             = useState(false)
   const [errors, setErrors]             = useState({})
+
+  useEffect(() => {
+    if (!orgId) return
+    getAgents(orgId).then(setAgents).catch(() => [])
+    getGroups(orgId).then(setGroups).catch(() => [])
+  }, [orgId])
 
   const set = (k, v) => {
     setForm(p => ({ ...p, [k]: v }))
@@ -248,20 +260,32 @@ export default function NewTicketPage() {
           {/* Agent-only assignment */}
           {isAgent && (
             <Card>
-              <CardHeader title="Assignment" subtitle="Leave blank for auto-assignment" />
+              <CardHeader title="Assignment" subtitle="Select group first — agent will be auto-suggested" />
               <div className="grid grid-cols-2 gap-4">
-                <Input
-                  label="Assignee Name"
-                  placeholder="e.g. Ravi Kumar"
-                  value={form.assigneeName}
-                  onChange={e => set('assigneeName', e.target.value)}
-                />
-                <Input
-                  label="Assignee User ID"
-                  placeholder="Firebase UID"
-                  value={form.assigneeId}
-                  onChange={e => set('assigneeId', e.target.value)}
-                />
+                <div>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color:'var(--text-secondary)' }}>Assignment Group</label>
+                  <select className="nd-input w-full" value={form.groupId}
+                    onChange={e => {
+                      const grp = groups.find(g => g.id === e.target.value)
+                      set('groupId', e.target.value)
+                      set('groupName', grp?.name ?? '')
+                    }}>
+                    <option value="">Select group…</option>
+                    {groups.map(g => <option key={g.id} value={g.id}>{g.name} ({g.module})</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color:'var(--text-secondary)' }}>Assigned Agent</label>
+                  <select className="nd-input w-full" value={form.assigneeId}
+                    onChange={e => {
+                      const agent = agents.find(a => a.id === e.target.value)
+                      set('assigneeId',   e.target.value)
+                      set('assigneeName', agent?.displayName ?? '')
+                    }}>
+                    <option value="">Auto-assign…</option>
+                    {agents.map(a => <option key={a.id} value={a.id}>{a.displayName} ({a.department || a.role})</option>)}
+                  </select>
+                </div>
               </div>
             </Card>
           )}

@@ -1,8 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// NexDesk — FSO Dashboard (Phase 2)
-// Field Service Operations: dispatch, work orders, live map, SLA tracking
+// NexDesk — FSO Dashboard  (Sprint 1 — Firestore-backed)
 // ─────────────────────────────────────────────────────────────────────────────
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { toast }    from 'react-hot-toast'
 import {
   MapPin, Wrench, Clock, CheckCircle, AlertTriangle,
@@ -11,29 +10,13 @@ import {
 import { useAuth } from '@/context/AuthContext'
 import { ROLES }   from '@/lib/constants'
 import {
-  Card, CardHeader, StatCard, Badge, Button, AIInsight,
+  Card, CardHeader, StatCard, Badge, Button, AIInsight, Spinner, EmptyState,
 } from '@/components/shared/index.jsx'
 import {
   BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid,
 } from 'recharts'
-
-const ENGINEERS = [
-  { id:'ENG-001', name:'Arun K.',   skills:['Server','Network'], rating:4.8, status:'available', lat:11.01, lng:76.97, queue:3, dist:'1.2km' },
-  { id:'ENG-002', name:'Raj M.',    skills:['Network'],           rating:4.5, status:'on_job',    lat:11.02, lng:76.95, queue:1, dist:'2.8km' },
-  { id:'ENG-003', name:'Vijay S.',  skills:['Hardware'],          rating:4.7, status:'available', lat:10.99, lng:76.98, queue:2, dist:'0.9km' },
-  { id:'ENG-004', name:'Kumar P.',  skills:['DB','Server'],       rating:4.3, status:'sla_risk',  lat:11.03, lng:76.96, queue:4, dist:'3.5km' },
-  { id:'ENG-005', name:'Siva R.',   skills:['Cloud'],             rating:4.6, status:'on_job',    lat:11.00, lng:76.99, queue:2, dist:'1.8km' },
-  { id:'ENG-006', name:'Pradeep T.',skills:['Hardware','Network'],rating:4.4, status:'available', lat:11.01, lng:76.93, queue:0, dist:'4.1km' },
-]
-
-const WORK_ORDERS = [
-  { id:'WO-001', title:'Network switch replacement — Fl 3',  priority:'P1', status:'In Progress', engineer:'Arun K.',   sla:'45 min', cost:'₹4,850',   type:'INCIDENT'  },
-  { id:'WO-002', title:'Server RAM upgrade — DataCenter',   priority:'P2', status:'Dispatched',  engineer:'Vijay S.',  sla:'2h 10m', cost:'₹12,500',  type:'MAINTENANCE'},
-  { id:'WO-003', title:'Printer offline — Finance floor',    priority:'P3', status:'Pending',     engineer:'Unassigned',sla:'6h',     cost:'₹1,200',   type:'INCIDENT'  },
-  { id:'WO-004', title:'Wi-Fi AP installation — HQ Lobby',  priority:'P3', status:'Scheduled',   engineer:'Raj M.',    sla:'Tomorrow',cost:'₹3,400',  type:'INSTALLATION'},
-  { id:'WO-005', title:'Laptop screen repair — Marketing',  priority:'P4', status:'Completed',   engineer:'Kumar P.',  sla:'Done',   cost:'₹2,100',   type:'REPAIR'    },
-  { id:'WO-006', title:'UPS battery replacement — Server Rm',priority:'P2',status:'In Progress', engineer:'Siva R.',   sla:'1h 20m', cost:'₹8,750',   type:'MAINTENANCE'},
-]
+import { listenToWorkOrders, createWorkOrder, assignWorkOrder, completeWorkOrder } from '@/lib/fsoService'
+import { getFieldEngineers } from '@/lib/userService'
 
 const PERF_DATA = [
   { day:'Mon', dispatches:12, resolved:11 },
@@ -51,8 +34,8 @@ const STATUS_COLOR = {
 }
 
 const WO_STATUS_COLOR = {
-  'In Progress': 'amber', 'Dispatched':'blue', 'Pending':'default',
-  'Scheduled':'cyan', 'Completed':'green', 'Cancelled':'red',
+  'In Progress':'amber', 'Dispatched':'blue', 'Pending':'default',
+  'Scheduled':'cyan',   'Completed':'green',  'Cancelled':'red',
 }
 
 const ChartTip = ({ active, payload, label }) => {
@@ -69,44 +52,71 @@ const ChartTip = ({ active, payload, label }) => {
 }
 
 export default function FSODashboard() {
-  const { role } = useAuth()
-  const isOps  = [ROLES.SUPER_ADMIN, ROLES.IT_ADMIN, ROLES.MANAGER].includes(role)
-  const isEng  = role === ROLES.FIELD_ENGINEER
+  const { role, profile, orgId, audit } = useAuth()
+  const isOps = [ROLES.SUPER_ADMIN, ROLES.IT_ADMIN, ROLES.MANAGER].includes(role)
+  const isEng = role === ROLES.FIELD_ENGINEER
 
-  const [tab,      setTab]      = useState('command')
-  const [orders,   setOrders]   = useState(WORK_ORDERS)
-  const [selected, setSelected] = useState(null)
-  const [showForm, setShowForm] = useState(false)
+  const [tab,       setTab]      = useState('command')
+  const [orders,    setOrders]   = useState([])
+  const [engineers, setEngineers]= useState([])
+  const [selected,  setSelected] = useState(null)
+  const [showForm,  setShowForm] = useState(false)
+  const [loading,   setLoading]  = useState(true)
 
-  const available  = ENGINEERS.filter(e => e.status === 'available').length
-  const slaRisk    = orders.filter(w => !['Completed','Cancelled'].includes(w.status) && w.priority !== 'P4').length
-  const totalCost  = orders.filter(w => w.status === 'Completed')
-    .reduce((s, w) => s + parseInt(w.cost.replace(/[₹,]/g, '')), 0)
+  // ── Real-time Firestore listeners ────────────────────────────────────────
+  useEffect(() => {
+    if (!orgId) return
+    setLoading(true)
+    const unsub = listenToWorkOrders(orgId, data => {
+      setOrders(data); setLoading(false)
+    }, isEng ? { assigneeId: profile?.uid } : {})
+    return unsub
+  }, [orgId, isEng, profile?.uid])
 
-  const handleAssign = (woId, engName) => {
-    setOrders(prev => prev.map(w =>
-      w.id === woId ? { ...w, engineer:engName, status:'Dispatched' } : w
-    ))
-    toast.success(`${woId} assigned to ${engName}`)
-    setSelected(null)
+  useEffect(() => {
+    if (!orgId) return
+    getFieldEngineers(orgId).then(setEngineers).catch(() => setEngineers([]))
+  }, [orgId])
+
+  const available = engineers.filter(e => e.active).length
+  const slaRisk   = orders.filter(w => !['Completed','Cancelled'].includes(w.status) && w.priority !== 'P4').length
+  const totalCost = orders.filter(w => w.status === 'Completed').length
+
+  const handleAssign = async (woId, engineer) => {
+    try {
+      await assignWorkOrder(woId, engineer, profile)
+      audit('wo_assigned', 'FSO', woId, { engineer: engineer.displayName })
+      toast.success(`${woId} assigned to ${engineer.displayName}`)
+      setSelected(null)
+    } catch (err) { toast.error('Assignment failed: ' + err.message) }
   }
 
-  const handleCreateWO = (e) => {
+  const handleCreateWO = async (e) => {
     e.preventDefault()
-    const fd = new FormData(e.target)
-    const wo = {
-      id:       `WO-${String(orders.length + 1).padStart(3,'0')}`,
-      title:    fd.get('title'),
-      priority: fd.get('priority') || 'P3',
-      status:   'Pending',
-      engineer: fd.get('engineer') || 'Unassigned',
-      sla:      fd.get('priority') === 'P1' ? '4h' : fd.get('priority') === 'P2' ? '8h' : '24h',
-      cost:     '₹0',
-      type:     fd.get('type') || 'INCIDENT',
-    }
-    setOrders(prev => [wo, ...prev])
-    setShowForm(false)
-    toast.success(`Work order ${wo.id} created`)
+    const fd  = new FormData(e.target)
+    const eng = engineers.find(u => u.id === fd.get('engineerId'))
+    try {
+      const { woId } = await createWorkOrder(orgId, {
+        title:        fd.get('title'),
+        type:         fd.get('type') || 'INCIDENT',
+        priority:     fd.get('priority') || 'P3',
+        location:     fd.get('location') || '',
+        assigneeId:   eng?.id   || null,
+        assigneeName: eng?.displayName || 'Unassigned',
+      }, profile)
+      audit('wo_created', 'FSO', woId)
+      setShowForm(false)
+      toast.success(`Work order ${woId} created`)
+      e.target.reset()
+    } catch (err) { toast.error('Failed: ' + err.message) }
+  }
+
+  const handleComplete = async (id, woId) => {
+    try {
+      await completeWorkOrder(id, '', profile)
+      audit('wo_completed', 'FSO', woId)
+      toast.success(`${woId} marked complete`)
+    } catch (err) { toast.error('Failed: ' + err.message) }
   }
 
   return (
@@ -170,9 +180,9 @@ export default function FSODashboard() {
               </div>
               <div>
                 <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Assign Engineer</label>
-                <select name="engineer" className="nd-input w-full">
-                  <option value="Unassigned">Unassigned</option>
-                  {ENGINEERS.map(e => <option key={e.id} value={e.name}>{e.name} ({e.status})</option>)}
+                <select name="engineerId" className="nd-input w-full">
+                  <option value="">Unassigned</option>
+                  {engineers.map(e => <option key={e.id} value={e.id}>{e.displayName}</option>)}
                 </select>
               </div>
               <div>
@@ -193,7 +203,7 @@ export default function FSODashboard() {
       )}
 
       {/* SLA alert */}
-      {ENGINEERS.some(e => e.status === 'sla_risk') && (
+      {slaRisk > 0 && (
         <div className="flex items-center gap-3 px-4 py-3 rounded-xl"
           style={{ background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.25)' }}>
           <AlertTriangle size={15} className="text-red-400 flex-shrink-0 animate-pulse" />
@@ -206,9 +216,9 @@ export default function FSODashboard() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label="Engineers Available" value={available}               color="green"  icon={Wrench}       sub={`of ${ENGINEERS.length} total`} />
+        <StatCard label="Engineers Available" value={available}               color="green"  icon={Wrench}       sub={`of ${engineers.length} total`} />
         <StatCard label="Active Work Orders"  value={orders.filter(w=>w.status!=='Completed'&&w.status!=='Cancelled').length} color="blue" icon={Package} sub="Open dispatches" />
-        <StatCard label="SLA Risk Dispatches" value={ENGINEERS.filter(e=>e.status==='sla_risk').length} color="red" icon={AlertTriangle} sub="Needs attention" />
+        <StatCard label="SLA Risk Dispatches" value={slaRisk} color="red" icon={AlertTriangle} sub="Needs attention" />
         <StatCard label="Revenue Today"       value={`₹${(totalCost/1000).toFixed(1)}k`} color="cyan" icon={TrendingUp} sub="Completed orders" />
       </div>
 
@@ -269,7 +279,7 @@ export default function FSODashboard() {
                 ))}
 
                 {/* Engineer pins */}
-                {ENGINEERS.map((eng, i) => {
+                {engineers.map((eng, i) => {
                   const positions = [
                     {x:28,y:32},{x:55,y:22},{x:70,y:52},{x:42,y:62},{x:80,y:32},{x:20,y:58}
                   ]
@@ -333,7 +343,7 @@ export default function FSODashboard() {
 
               {/* Engineer quick cards */}
               <div className="grid grid-cols-3 gap-2 mt-3">
-                {ENGINEERS.map(eng => {
+                {engineers.map(eng => {
                   const sc = STATUS_COLOR[eng.status]
                   return (
                     <div key={eng.id}
@@ -384,8 +394,8 @@ export default function FSODashboard() {
               </div>
             </Card>
 
-            <AIInsight type={ENGINEERS.some(e=>e.status==='sla_risk') ? 'warning' : 'info'}>
-              {ENGINEERS.some(e => e.status === 'sla_risk')
+            <AIInsight type={engineers.some(e=>e.status==='sla_risk') ? 'warning' : 'info'}>
+              {slaRisk > 0
                 ? <><strong>Kumar P.</strong> has 4 jobs queued and is at SLA risk. Recommend redistributing 2 jobs to Pradeep T. (0 queue).</>
                 : <>Tomorrow's dispatch load exceeds capacity by <strong>18%</strong>. Consider scheduling an additional engineer.</>
               }
@@ -434,44 +444,50 @@ export default function FSODashboard() {
       {/* ── ENGINEERS ── */}
       {tab === 'engineers' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {ENGINEERS.map(eng => {
-            const sc = STATUS_COLOR[eng.status]
+          {engineers.length === 0 ? (
+            <div className="col-span-3">
+              <EmptyState icon="👷" title="No field engineers"
+                subtitle="Add users with 'Field Engineer' role to assign work orders." />
+            </div>
+          ) : engineers.map(eng => {
+            const initials = (eng.displayName ?? 'FE').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()
+            const woCount  = orders.filter(w => w.assigneeId === eng.id && w.status !== 'Completed').length
             return (
               <Card key={eng.id}>
                 <div className="flex items-center gap-3 mb-3">
                   <div className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
                     style={{ background:'linear-gradient(135deg,#3b62f5,#7c3aed)' }}>
-                    {eng.name.charAt(0)}
+                    {initials}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold" style={{ color:'var(--text-primary)' }}>{eng.name}</span>
-                      <div style={{ width:7, height:7, borderRadius:'50%', background:sc.dot, flexShrink:0 }} />
+                      <span className="text-sm font-semibold truncate" style={{ color:'var(--text-primary)' }}>
+                        {eng.displayName}
+                      </span>
+                      <div style={{ width:7, height:7, borderRadius:'50%', background:eng.active?'#22c55e':'#6b7280', flexShrink:0 }} />
                     </div>
                     <div className="text-[10px]" style={{ color:'var(--text-muted)' }}>
-                      ⭐ {eng.rating} · {eng.dist} away
+                      {eng.department || 'Field Services'} · {eng.phone || '—'}
                     </div>
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-1 mb-3">
-                  {eng.skills.map(s => (
-                    <Badge key={s} variant="blue" className="text-[9px]">{s}</Badge>
-                  ))}
-                </div>
-                <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                <div className="grid grid-cols-2 gap-2 text-center text-xs mb-3">
                   <div className="rounded-lg p-1.5" style={{ background:'var(--bg-elevated)' }}>
-                    <div className="font-bold font-mono" style={{ color:'var(--text-primary)' }}>{eng.queue}</div>
-                    <div style={{ color:'var(--text-muted)', fontSize:10 }}>Jobs</div>
+                    <div className="font-bold font-mono" style={{ color:'var(--text-primary)' }}>{woCount}</div>
+                    <div style={{ color:'var(--text-muted)', fontSize:10 }}>Active WOs</div>
                   </div>
                   <div className="rounded-lg p-1.5" style={{ background:'var(--bg-elevated)' }}>
-                    <div className="font-bold font-mono" style={{ color: sc.dot }}>{sc.label}</div>
+                    <div className="font-bold font-mono" style={{ color:eng.active?'#22c55e':'#6b7280' }}>
+                      {eng.active ? 'Available' : 'Inactive'}
+                    </div>
                     <div style={{ color:'var(--text-muted)', fontSize:10 }}>Status</div>
                   </div>
-                  <div className="rounded-lg p-1.5" style={{ background:'var(--bg-elevated)' }}>
-                    <div className="font-bold font-mono" style={{ color:'var(--text-primary)' }}>{eng.dist}</div>
-                    <div style={{ color:'var(--text-muted)', fontSize:10 }}>Distance</div>
-                  </div>
                 </div>
+                {selected && (
+                  <Button size="sm" className="w-full" onClick={() => handleAssign(selected.id, eng)}>
+                    Assign {selected.woId} →
+                  </Button>
+                )}
               </Card>
             )
           })}

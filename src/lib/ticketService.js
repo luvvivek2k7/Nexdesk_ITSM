@@ -50,6 +50,7 @@ export async function createTicket(data, createdBy) {
   const ticket = {
     ticketId,
     ticketDate,
+    orgId:          createdBy.orgId   ?? data.orgId ?? 'system',
     type:           data.type        ?? 'INCIDENT',
     title:          (data.title      ?? '').trim(),
     description:    (data.description ?? '').trim(),
@@ -60,9 +61,14 @@ export async function createTicket(data, createdBy) {
     requesterId:    createdBy.uid,
     requesterName:  createdBy.displayName ?? createdBy.email,
     requesterEmail: createdBy.email,
+    requesterDept:  createdBy.department ?? '',
+    requesterOrg:   createdBy.orgName   ?? '',
     // Assignee
     assigneeId:     data.assigneeId   ?? null,
     assigneeName:   data.assigneeName ?? null,
+    // Assignment group
+    groupId:        data.groupId      ?? null,
+    groupName:      data.groupName    ?? null,
     // Arrays
     tags:           Array.isArray(data.tags) ? data.tags : [],
     attachments:    [],

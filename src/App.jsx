@@ -13,7 +13,8 @@ import AppShell      from '@/components/layout/AppShell'
 import LoadingScreen from '@/components/shared/LoadingScreen'
 
 // Public
-import LoginPage from '@/pages/LoginPage'
+import LoginPage        from '@/pages/LoginPage'
+import AccessDeniedPage from '@/pages/AccessDeniedPage'
 
 // Portal
 import PortalPage from '@/pages/PortalPage'
@@ -49,8 +50,8 @@ import UsersPage             from '@/pages/admin/UsersPage'
 import RolesPage             from '@/pages/admin/RolesPage'
 import SettingsPage          from '@/pages/admin/SettingsPage'
 import WorkflowPage          from '@/pages/admin/WorkflowPage'
-import AssignmentGroupsPage  from '@/pages/admin/AssignmentGroupsPage'
-import AuditLogPage          from '@/pages/admin/AuditLogPage'
+import AuditLogPage       from '@/pages/admin/AuditLogPage'
+import AssignmentGroupsPage from '@/pages/admin/AssignmentGroupsPage'
 
 // User
 import ProfilePage       from '@/pages/user/ProfilePage'
@@ -58,18 +59,19 @@ import NotificationsPage from '@/pages/user/NotificationsPage'
 
 // About
 import AboutPage from '@/pages/AboutPage'
-import AccessDeniedPage from '@/pages/AccessDeniedPage'
 
 import { ROLES } from '@/lib/constants'
 
 // ── Route guard ───────────────────────────────────────────────────────────────
 function Protected({ children, roles }) {
-  const { user, profile, loading } = useAuth()
-  if (loading)  return <LoadingScreen />
-  if (!user)    return <Navigate to="/login" replace />
-  // Block users not provisioned by Super Admin
-  if (profile?.notWhitelisted) return <AccessDeniedPage />
-  if (roles && profile?.role && !roles.includes(profile.role)) {
+  const { user, profile, loading, authError } = useAuth()
+  if (loading)                      return <LoadingScreen />
+  if (authError === 'denied')       return <AccessDeniedPage reason="denied" />
+  if (authError === 'deactivated')  return <AccessDeniedPage reason="deactivated" />
+  if (authError === 'error')        return <AccessDeniedPage reason="error" />
+  if (!user)                        return <Navigate to="/login" replace />
+  if (!profile)                     return <LoadingScreen />
+  if (roles && !roles.includes(profile.role)) {
     return <Navigate to="/portal" replace />
   }
   return children
@@ -172,8 +174,8 @@ export default function App() {
             <Route path="roles"      element={<RolesPage />} />
             <Route path="groups"     element={<AssignmentGroupsPage />} />
             <Route path="workflow"   element={<WorkflowPage />} />
-            <Route path="settings"   element={<SettingsPage />} />
             <Route path="audit"      element={<AuditLogPage />} />
+            <Route path="settings"   element={<SettingsPage />} />
           </Route>
 
           {/* ── User ── */}

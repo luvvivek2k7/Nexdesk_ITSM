@@ -41,7 +41,7 @@ const ROLE_EMOJI = {
 }
 
 // ── Create / Edit User Modal ──────────────────────────────────────────────────
-function UserModal({ user, onClose, onSave, isSuperAdmin }) {
+function UserModal({ user, onClose, onSave, isSuperAdmin, groups = [] }) {
   const isEdit = !!user
   const [form, setForm] = useState({
     displayName: user?.displayName ?? '',
@@ -49,6 +49,10 @@ function UserModal({ user, onClose, onSave, isSuperAdmin }) {
     role:        user?.role        ?? ROLES.USER,
     department:  user?.department  ?? '',
     phone:       user?.phone       ?? '',
+    orgName:     user?.orgName     ?? '',
+    employeeId:  user?.employeeId  ?? '',
+    groupId:     user?.groupId     ?? '',
+    groupName:   user?.groupName   ?? '',
     active:      user?.active      ?? true,
   })
   const [saving, setSaving] = useState(false)
@@ -135,6 +139,43 @@ function UserModal({ user, onClose, onSave, isSuperAdmin }) {
             placeholder="+91 98765 43210"
           />
 
+          <Input
+            label="Employee ID"
+            value={form.employeeId}
+            onChange={e => set('employeeId', e.target.value)}
+            placeholder="e.g. EMP-0042"
+          />
+
+          <Input
+            label="Organisation Name"
+            value={form.orgName}
+            onChange={e => set('orgName', e.target.value)}
+            placeholder="e.g. Accenture, Infosys…"
+          />
+
+          {/* Assignment Group — persona-based */}
+          <div>
+            <label className="block text-xs font-medium mb-1.5" style={{ color:'var(--text-secondary)' }}>
+              Assignment Group
+            </label>
+            <select
+              className="nd-input w-full"
+              value={form.groupId}
+              onChange={e => {
+                const grp = groups.find(g => g.id === e.target.value)
+                set('groupId',   e.target.value)
+                set('groupName', grp?.name ?? '')
+              }}>
+              <option value="">None</option>
+              {groups.map(g => (
+                <option key={g.id} value={g.id}>{g.name} ({g.module})</option>
+              ))}
+            </select>
+            <p className="text-xs mt-1" style={{ color:'var(--text-muted)' }}>
+              Tickets assigned to this group will auto-route to this user's queue
+            </p>
+          </div>
+
           {isEdit && (
             <div className="flex items-center justify-between py-2">
               <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Account Status</span>
@@ -172,11 +213,12 @@ function UserModal({ user, onClose, onSave, isSuperAdmin }) {
 
 // ── Main Users Page ───────────────────────────────────────────────────────────
 export default function UsersPage() {
-  const { profile: me, can, role: myRole } = useAuth()
+  const { profile: me, profile, can, role: myRole, createPlaceholderUser, audit } = useAuth()
   const isSuperAdmin = myRole === ROLES.SUPER_ADMIN
   const isItAdmin    = myRole === ROLES.IT_ADMIN
 
   const [users,     setUsers]     = useState([])
+  const [groups,    setGroups]    = useState([])
   const [loading,   setLoading]   = useState(true)
   const [search,    setSearch]    = useState('')
   const [roleFilter,setRoleFilter]= useState('ALL')
@@ -196,7 +238,12 @@ export default function UsersPage() {
     }
   }
 
-  useEffect(() => { fetchUsers() }, [])
+  useEffect(() => {
+    fetchUsers()
+    import('@/lib/assignmentService').then(({ listenToGroups }) => {
+      listenToGroups(data => setGroups(data))
+    })
+  }, [])
 
   // ── Save handler (create or edit) ────────────────────────────────────────
   const handleSave = async (form, userId) => {
@@ -209,34 +256,35 @@ export default function UsersPage() {
         department:  form.department,
         phone:       form.phone,
         active:      form.active,
+        groupId:     form.groupId   ?? null,
+        groupName:   form.groupName ?? null,
+        employeeId:  form.employeeId ?? null,
         updatedAt:   serverTimestamp(),
       })
       setUsers(prev => prev.map(u =>
         u.id === userId ? { ...u, ...form } : u
       ))
+      audit?.('user_updated', 'Admin', userId)
       toast.success('User updated')
     } else {
-      // Create placeholder
-      const id  = `placeholder_${Date.now()}`
-      const ref = doc(db, 'users', id)
-      const newUser = {
-        uid:           id,
-        email:         form.email,
-        displayName:   form.displayName,
-        role:          form.role,
-        department:    form.department,
-        phone:         form.phone,
-        photoURL:      null,
-        active:        true,
-        isPlaceholder: true,
-        createdAt:     serverTimestamp(),
-        lastSeenAt:    null,
-        updatedAt:     serverTimestamp(),
-        preferences:   { theme: 'dark', language: 'en', notifications: { email: true, push: true, sla: true } },
+      // Create pre-authorised placeholder via AuthContext helper
+      try {
+        await createPlaceholderUser({
+          email:       form.email,
+          displayName: form.displayName,
+          role:        form.role,
+          department:  form.department,
+          phone:       form.phone,
+          orgId:       profile?.orgId  ?? 'system',
+          orgName:     profile?.orgName ?? '',
+          employeeId:  form.employeeId ?? '',
+        })
+        await fetchUsers()
+        audit?.('user_created', 'Admin', form.email)
+        toast.success(`${form.displayName} added — they can now sign in with ${form.email}`)
+      } catch (err) {
+        throw err
       }
-      await setDoc(ref, newUser)
-      setUsers(prev => [...prev, { id, ...newUser }])
-      toast.success(`User "${form.displayName}" created as ${ROLE_META[form.role]?.label}`)
     }
   }
 
@@ -543,6 +591,7 @@ export default function UsersPage() {
       {showModal && (
         <UserModal
           user={editUser}
+          groups={groups}
           onClose={() => { setShowModal(false); setEditUser(null) }}
           onSave={handleSave}
           isSuperAdmin={isSuperAdmin}

@@ -1,8 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// NexDesk — Visitor Management Dashboard (Phase 2)
-// Premises & visitor: live roster, kiosk check-in, physical access, analytics
+// NexDesk — Visitor Management Dashboard  (Sprint 1 — Firestore-backed)
 // ─────────────────────────────────────────────────────────────────────────────
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { toast }    from 'react-hot-toast'
 import {
   Building2, Users, Clock, AlertTriangle, CheckCircle,
@@ -10,13 +9,15 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import {
-  Card, CardHeader, StatCard, Badge, Button, AIInsight,
+  Card, CardHeader, StatCard, Badge, Button, AIInsight, Spinner, EmptyState,
 } from '@/components/shared/index.jsx'
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts'
 import { formatDistanceToNow } from 'date-fns'
+import { listenToVisitors, preRegisterVisitor, checkInVisitor, checkOutVisitor, revokeVisitorBadge } from '@/lib/visitorService'
+import { listenToUsers } from '@/lib/userService'
 
 const VISITORS = [
   { id:'VIS-001', name:'Sarah Jones',    company:'TechCorp Ltd',    host:'Robert Smith', floor:'Fl 2 / Zone C', checkin:'09:15 AM', badge:'Active',  risk:'Low',    photo:'SJ' },
@@ -59,45 +60,87 @@ const ChartTip = ({ active, payload, label }) => {
 }
 
 export default function VisitorDashboard() {
-  const [tab,      setTab]     = useState('overview')
-  const [visitors, setVisitors]= useState(VISITORS)
-  const [search,   setSearch]  = useState('')
+  const { profile, orgId, audit } = useAuth()
+  const today = new Date().toISOString().slice(0,10)
 
-  const onsite  = visitors.length
+  const [tab,      setTab]     = useState('overview')
+  const [visitors, setVisitors]= useState([])
+  const [hosts,    setHosts]   = useState([])
+  const [search,   setSearch]  = useState('')
+  const [loading,  setLoading] = useState(true)
+
+  // ── Real-time listeners ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!orgId) return
+    setLoading(true)
+    const unsub = listenToVisitors(orgId, data => { setVisitors(data); setLoading(false) })
+    return unsub
+  }, [orgId])
+
+  useEffect(() => {
+    if (!orgId) return
+    const unsub = listenToUsers(orgId, data => setHosts(data))
+    return unsub
+  }, [orgId])
+
+  const onsite  = visitors.filter(v => v.status === 'Checked In').length
   const flagged = visitors.filter(v => v.risk === 'High').length
-  const expired = visitors.filter(v => v.badge === 'Expired').length
+  const expired = visitors.filter(v => v.status === 'Badge Revoked').length
 
   const filtered = visitors.filter(v =>
     !search.trim() ||
-    v.name.toLowerCase().includes(search.toLowerCase()) ||
-    v.company.toLowerCase().includes(search.toLowerCase()) ||
-    v.host.toLowerCase().includes(search.toLowerCase())
+    v.visitorName?.toLowerCase().includes(search.toLowerCase()) ||
+    v.company?.toLowerCase().includes(search.toLowerCase()) ||
+    v.hostName?.toLowerCase().includes(search.toLowerCase())
   )
 
-  const handlePreRegister = (e) => {
+  const handlePreRegister = async (e) => {
     e.preventDefault()
-    const fd = new FormData(e.target)
-    const name = fd.get('visitorName') || ''
-    const newVisitor = {
-      id: `VIS-${String(visitors.length + 1).padStart(3,'0')}`,
-      name,
-      company: fd.get('company') || '—',
-      host:    fd.get('host')    || '—',
-      floor:   fd.get('zone')   || 'Fl 1 / Zone A (Lobby)',
-      checkin: new Date().toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' }) + ' (Pre-Reg)',
-      badge:   'Pre-Registered',
-      risk:    'Low',
-      photo:   name.trim().split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase() || 'VX',
-    }
-    setVisitors(prev => [newVisitor, ...prev])
-    setTab('roster')
-    toast.success(`${name} pre-registered. QR invite sent to host.`)
-    e.target.reset()
+    const fd      = new FormData(e.target)
+    const hostId  = fd.get('hostId')
+    const host    = hosts.find(h => h.id === hostId)
+    try {
+      const { visitorId } = await preRegisterVisitor(orgId, {
+        visitorName: fd.get('visitorName'),
+        company:     fd.get('company') || '—',
+        hostId:      hostId,
+        hostName:    host?.displayName || fd.get('hostId'),
+        purpose:     fd.get('purpose') || '',
+        visitDate:   fd.get('visitDate') || today,
+        visitTime:   fd.get('visitTime') || '',
+        zone:        fd.get('zone') || 'Fl 1 / Zone A (Lobby)',
+        risk:        'Low',
+        photo:       (fd.get('visitorName') || 'VX').trim().split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase(),
+      }, profile)
+      audit('visitor_preregistered', 'Visitor', visitorId)
+      setTab('roster')
+      toast.success(`${fd.get('visitorName')} pre-registered successfully`)
+      e.target.reset()
+    } catch (err) { toast.error('Failed: ' + err.message) }
   }
 
-  const handleDeactivate = (id) => {
-    setVisitors(prev => prev.map(v => v.id === id ? { ...v, badge:'Expired' } : v))
-    toast.success(`Badge deactivated for ${visitors.find(v=>v.id===id)?.name}`)
+  const handleCheckIn = async (id, name) => {
+    try {
+      const badge = await checkInVisitor(id, profile)
+      audit('visitor_checkin', 'Visitor', id)
+      toast.success(`${name} checked in — Badge ${badge} issued`)
+    } catch (err) { toast.error('Check-in failed: ' + err.message) }
+  }
+
+  const handleCheckOut = async (id, name) => {
+    try {
+      await checkOutVisitor(id, profile)
+      audit('visitor_checkout', 'Visitor', id)
+      toast.success(`${name} checked out`)
+    } catch (err) { toast.error('Check-out failed: ' + err.message) }
+  }
+
+  const handleDeactivate = async (id) => {
+    try {
+      await revokeVisitorBadge(id)
+      audit('visitor_badge_revoked', 'Visitor', id)
+      toast.success('Badge revoked')
+    } catch (err) { toast.error('Failed: ' + err.message) }
   }
 
   return (
@@ -363,7 +406,6 @@ export default function VisitorDashboard() {
               {[
                 { label:'Visitor Name',  placeholder:'Sarah Jones',    name:'visitorName', required:true  },
                 { label:'Company',       placeholder:'TechCorp Ltd',   name:'company',     required:false },
-                { label:'Host Employee', placeholder:'Robert Smith',   name:'host',        required:true  },
                 { label:'Purpose',       placeholder:'Client meeting', name:'purpose',     required:false },
               ].map(f => (
                 <div key={f.label} className="space-y-1.5">
@@ -371,6 +413,13 @@ export default function VisitorDashboard() {
                   <input name={f.name} required={f.required} className="nd-input text-sm" placeholder={f.placeholder} />
                 </div>
               ))}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium" style={{ color:'var(--text-secondary)' }}>Host (Meeting With) *</label>
+                <select name="hostId" required className="nd-input text-sm">
+                  <option value="">Select host…</option>
+                  {hosts.map(h => <option key={h.id} value={h.id}>{h.displayName} ({h.department || h.role})</option>)}
+                </select>
+              </div>
               <div className="space-y-1.5">
                 <label className="block text-xs font-medium" style={{ color:'var(--text-secondary)' }}>Visit Date & Time</label>
                 <input type="datetime-local" name="visitTime" className="nd-input text-sm" />

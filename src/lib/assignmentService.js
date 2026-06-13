@@ -28,9 +28,13 @@ export async function createGroup(data, createdBy) {
 }
 
 // ── GET all groups ────────────────────────────────────────────────────────────
-export async function getGroups() {
-  const snap = await getDocs(query(collection(db, COL), orderBy('name', 'asc')))
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+export async function getGroups(orgId = null) {
+  try {
+    const q    = orgId ? query(collection(db, COL), where('orgId', '==', orgId)) : collection(db, COL)
+    const snap = await getDocs(q)
+    const data = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    return data.sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
+  } catch (err) { console.warn('getGroups:', err.message); return [] }
 }
 
 // ── GET single group ──────────────────────────────────────────────────────────
@@ -75,11 +79,19 @@ export async function removeMember(groupId, uid) {
 }
 
 // ── Real-time listener ────────────────────────────────────────────────────────
-export function listenToGroups(callback, onError) {
-  const q = query(collection(db, COL), orderBy('name', 'asc'))
+export function listenToGroups(callback, onError, orgId = null) {
+  // Sort client-side to avoid composite index requirement until indexes deploy
+  const q = orgId
+    ? query(collection(db, COL), where('orgId', '==', orgId))
+    : collection(db, COL)
+
   return onSnapshot(q,
-    snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
-    err  => { console.error('listenToGroups:', err); onError?.(err) }
+    snap => {
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      data.sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
+      callback(data)
+    },
+    err => { console.warn('listenToGroups:', err.message); onError?.(err) }
   )
 }
 

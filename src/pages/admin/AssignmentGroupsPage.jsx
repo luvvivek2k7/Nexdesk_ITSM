@@ -152,7 +152,7 @@ function GroupCard({ group, allUsers, onDeleted }) {
 }
 
 export default function AssignmentGroupsPage() {
-  const { user, profile } = useAuth()
+  const { user, profile, orgId } = useAuth()
   const [groups,   setGroups]   = useState([])
   const [users,    setUsers]    = useState([])
   const [loading,  setLoading]  = useState(true)
@@ -162,7 +162,7 @@ export default function AssignmentGroupsPage() {
 
   // Real-time groups
   useEffect(() => {
-    const unsub = listenToGroups(data => { setGroups(data); setLoading(false) }, () => setLoading(false))
+    const unsub = listenToGroups(data => { setGroups(data); setLoading(false) }, () => setLoading(false), orgId)
     return unsub
   }, [])
 
@@ -175,7 +175,7 @@ export default function AssignmentGroupsPage() {
     if (!form.name.trim()) { toast.error('Group name required'); return }
     setSaving(true)
     try {
-      await createGroup(form, { uid: user.uid, displayName: profile?.displayName ?? user.email })
+      await createGroup({ ...form, orgId }, { uid: user.uid, displayName: profile?.displayName ?? user.email })
       toast.success(`Group "${form.name}" created`)
       setForm({ name: '', description: '', category: '', type: '' })
       setShowForm(false)
@@ -243,7 +243,7 @@ export default function AssignmentGroupsPage() {
         : groups.length === 0 && !showForm
           ? <EmptyState title="No assignment groups yet" icon={Users}
               description="Create groups to organise your support team. Agents are assigned tickets through groups."
-              action={<Button icon={Plus} onClick={() => setShowForm(true)}>Create First Group</Button>} />
+              action={{ label: 'Create First Group', onClick: () => setShowForm(true) }} />
           : groups.map(g => (
               <GroupCard key={g.id} group={g} allUsers={users} onDeleted={() => {}} />
             ))

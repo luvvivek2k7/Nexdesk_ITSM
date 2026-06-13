@@ -1,21 +1,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// NexDesk — IAM Dashboard (Phase 2)
+// NexDesk — IAM Dashboard  (Sprint 1 — Firestore-backed)
 // ─────────────────────────────────────────────────────────────────────────────
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
 import { Shield, AlertTriangle, Clock, CheckCircle, Users, Plus, X, Check } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
-import { Card, CardHeader, StatCard, Badge, Button, AIInsight } from '@/components/shared/index.jsx'
+import { Card, CardHeader, StatCard, Badge, Button, AIInsight, Spinner, EmptyState } from '@/components/shared/index.jsx'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { toast } from 'react-hot-toast'
-
-const PENDING_REQUESTS = [
-  { id:'AR-001', requester:'Alice Chen',    dept:'Finance',    app:'SAP Finance',    role:'Finance Executive', risk:78, sla:'3 days', status:'Pending',  aiRec:'Approve — peer-group standard' },
-  { id:'AR-002', requester:'Kiran Mehta',  dept:'Engineering',app:'AWS Console',     role:'DevOps Engineer',   risk:45, sla:'2 days', status:'Pending',  aiRec:'Approve — matches job role'    },
-  { id:'AR-003', requester:'Meera Pillai', dept:'Finance',    app:'SAP_GL & SAP_AP', role:'Finance + AP',      risk:92, sla:'1 day',  status:'Flagged',  aiRec:'⚠ SoD conflict detected'      },
-  { id:'AR-004', requester:'Suresh Kumar', dept:'Operations', app:'Azure Portal',    role:'Contributor',       risk:55, sla:'3 days', status:'Pending',  aiRec:'Approve — standard ops access' },
-  { id:'AR-005', requester:'Priya Nair',   dept:'IT',         app:'CrowdStrike',    role:'Security Analyst',  risk:30, sla:'4 days', status:'Approved', aiRec:'Already approved'              },
-]
+import { listenToAccessRequests, createAccessRequest, approveRequest, rejectRequest } from '@/lib/iamService'
 
 const RBAC_DATA = [
   { name:'RBAC', value:82, color:'#3b62f5' },
@@ -23,31 +15,57 @@ const RBAC_DATA = [
 ]
 
 export default function IAMDashboard() {
-  const { isAdmin, isManager } = useAuth()
-  const [requests, setRequests] = useState(PENDING_REQUESTS)
-  const [tab, setTab]           = useState('overview')
+  const { isAdmin, isManager, profile, orgId, audit } = useAuth()
+  const [requests, setRequests] = useState([])
+  const [tab,      setTab]      = useState('overview')
   const [showForm, setShowForm] = useState(false)
+  const [loading,  setLoading]  = useState(true)
+
+  // ── Real-time listener ───────────────────────────────────────────────────
+  useEffect(() => {
+    if (!orgId) return
+    setLoading(true)
+    const unsub = listenToAccessRequests(orgId, data => {
+      setRequests(data); setLoading(false)
+    })
+    return unsub
+  }, [orgId])
 
   const pending = requests.filter(r => r.status === 'Pending').length
   const flagged = requests.filter(r => r.status === 'Flagged').length
 
-  const handleAction = (id, action) => {
-    setRequests(prev => prev.map(r =>
-      r.id === id ? { ...r, status: action === 'approve' ? 'Approved' : 'Rejected' } : r
-    ))
-    toast.success(`Request ${id} ${action === 'approve' ? 'approved' : 'rejected'}`)
+  const handleAction = async (id, action) => {
+    try {
+      if (action === 'approve') {
+        await approveRequest(id, profile)
+        audit('iam_approved', 'IAM', id)
+      } else {
+        await rejectRequest(id, profile)
+        audit('iam_rejected', 'IAM', id)
+      }
+      toast.success(`Request ${action === 'approve' ? 'approved' : 'rejected'}`)
+    } catch (err) { toast.error('Failed: ' + err.message) }
   }
 
-  const handleSubmitRequest = (e) => {
+  const handleSubmitRequest = async (e) => {
     e.preventDefault()
     const fd = new FormData(e.target)
-    const newReq = {
-      id:        `AR-${String(requests.length + 1).padStart(3,'0')}`,
-      requester: fd.get('requester') || 'Current User',
-      dept:      fd.get('dept')      || 'IT',
-      app:       fd.get('app')       || '',
-      role:      fd.get('role')      || '',
-      risk:      30,
+    try {
+      const { reqId } = await createAccessRequest(orgId, {
+        app:         fd.get('app'),
+        system:      fd.get('app'),
+        accessLevel: fd.get('role'),
+        duration:    fd.get('duration') || 'Permanent',
+        justification: fd.get('justification'),
+      }, profile)
+      audit('iam_request_created', 'IAM', reqId)
+      setShowForm(false)
+      toast.success(`Access request ${reqId} submitted`)
+      e.target.reset()
+    } catch (err) { toast.error('Submit failed: ' + err.message) }
+  }
+
+
       sla:       '3 days',
       status:    'Pending',
       aiRec:     'Pending AI analysis',
