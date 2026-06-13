@@ -66,15 +66,6 @@ export default function IAMDashboard() {
   }
 
 
-      sla:       '3 days',
-      status:    'Pending',
-      aiRec:     'Pending AI analysis',
-    }
-    setRequests(prev => [newReq, ...prev])
-    setShowForm(false)
-    toast.success(`Access request ${newReq.id} submitted for approval`)
-  }
-
   return (
     <div className="space-y-5 animate-fade-in">
       <div className="flex items-center justify-between gap-3">
