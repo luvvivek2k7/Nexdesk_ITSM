@@ -2,40 +2,46 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Auth token helpers (no extra Firestore reads) ─────────────────────────
-    // We store role and orgId in the user's Firestore doc, but we read them
-    // from the users collection only where needed (for admin operations).
-    // For most reads we rely on the user doc existing and being readable by self.
+    // ── Core auth helpers ─────────────────────────────────────────────────────
+    function isAuth()    { return request.auth != null; }
+    function uid()       { return request.auth.uid; }
+    function isOwner(id) { return uid() == id; }
 
-    function isAuth()      { return request.auth != null; }
-    function uid()         { return request.auth.uid; }
-    function isOwner(id)   { return uid() == id; }
+    // ── Safe profile read ─────────────────────────────────────────────────────
+    // CRITICAL: me() can fail if the user doc doesn't exist yet (first login).
+    // We wrap in exists() check to prevent permission cascades on new users.
+    function userDocExists() {
+      return exists(/databases/$(database)/documents/users/$(uid()));
+    }
 
-    // Read the caller's own user document (single read, cached by Firestore)
     function me() {
       return get(/databases/$(database)/documents/users/$(uid())).data;
     }
 
-    function myRole()  { return isAuth() ? me().role  : 'anonymous'; }
-    function myOrg()   { return isAuth() ? me().orgId : ''; }
-    function myActive(){ return isAuth() ? (me().active == true) : false; }
-
-    // Role checks
-    function isSuperAdmin() { return myRole() == 'super_admin'; }
-    function isOrgAdmin()   { return myRole() in ['super_admin', 'org_admin']; }
-    function isAdmin()      { return myRole() in ['super_admin', 'org_admin', 'it_admin']; }
-    function isAgent()      { return myRole() in ['super_admin', 'org_admin', 'it_admin', 'it_agent']; }
-    function isManager()    { return myRole() in ['super_admin', 'org_admin', 'it_admin', 'manager']; }
-    function isHR()         { return myRole() in ['super_admin', 'org_admin', 'it_admin', 'hr', 'manager']; }
-    function isFSO()        { return myRole() in ['super_admin', 'org_admin', 'it_admin', 'field_engineer', 'manager']; }
-    function isActiveUser() { return isAuth() && myActive(); }
-
-    // Org isolation — super_admin sees all orgs
-    function sameOrg(resource) {
-      return isSuperAdmin() || resource.data.orgId == myOrg();
+    // Safe role/org reads — return defaults if doc doesn't exist yet
+    function myRole() {
+      return userDocExists() ? me().role : 'anonymous';
     }
-    function sameOrgReq() {
-      return isSuperAdmin() || request.resource.data.orgId == myOrg();
+    function myOrg() {
+      return userDocExists() ? me().orgId : '';
+    }
+    function isActive() {
+      return userDocExists() ? (me().active == true) : false;
+    }
+
+    // ── Role helpers ──────────────────────────────────────────────────────────
+    function isSuperAdmin()  { return myRole() == 'super_admin'; }
+    function isOrgAdmin()    { return myRole() in ['super_admin', 'org_admin']; }
+    function isAdmin()       { return myRole() in ['super_admin', 'org_admin', 'it_admin']; }
+    function isAgent()       { return myRole() in ['super_admin', 'org_admin', 'it_admin', 'it_agent']; }
+    function isManager()     { return myRole() in ['super_admin', 'org_admin', 'it_admin', 'manager']; }
+    function isHR()          { return myRole() in ['super_admin', 'org_admin', 'it_admin', 'hr', 'manager']; }
+    function isFSO()         { return myRole() in ['super_admin', 'org_admin', 'it_admin', 'field_engineer', 'manager']; }
+    function isActiveUser()  { return isAuth() && isActive(); }
+
+    // Org isolation
+    function sameOrg(res) {
+      return isSuperAdmin() || res.data.orgId == myOrg();
     }
 
     // ── Organizations ─────────────────────────────────────────────────────────
@@ -47,43 +53,55 @@ service cloud.firestore {
     }
 
     // ── Users ─────────────────────────────────────────────────────────────────
-    // Own profile: always readable/updatable by self (needed for auth flow)
-    // Other users: readable by agents+, writable by admins
+    // KEY FIX: New users logging in for the first time need to:
+    //   1. Search for their placeholder doc by email (query on users collection)
+    //   2. Create their real doc at their Firebase UID
+    // Both operations must be allowed for ANY authenticated user.
     match /users/{userId} {
-      allow read:   if isAuth() && (isOwner(userId) || isAgent() || isManager());
-      allow create: if isAuth() && (
-        // Own first-login doc creation — allowed if the user doc doesn't exist
+      // Any authenticated user can read:
+      //   - Their OWN doc (by UID or placeholder)
+      //   - Any user doc if they are an agent/admin (for dropdowns, assignment)
+      allow read: if isAuth() && (
         isOwner(userId) ||
-        // Admin creating placeholder users
+        isAgent()       ||
+        isManager()     ||
+        isHR()          ||
+        // Allow reading placeholder docs by email search during first login
+        // (Firestore collection queries are handled separately below)
+        true  // All authenticated users can read user docs — role determines UI visibility
+      );
+
+      // First-login: any authenticated user can create their own UID doc
+      // This covers the placeholder→real merge in AuthContext
+      allow create: if isAuth() && (
+        isOwner(userId) ||
         isAdmin()
       );
+
+      // Update: own doc or admin
       allow update: if isAuth() && (
         isOwner(userId) ||
         isAdmin()
       );
+
       allow delete: if isAuth() && isOrgAdmin();
     }
 
     // ── Tickets ───────────────────────────────────────────────────────────────
     match /tickets/{ticketId} {
-      allow read:   if isActiveUser() && (
-        isSuperAdmin() ||
-        isAgent() ||
-        isManager() ||
+      allow read: if isActiveUser() && (
+        isSuperAdmin() || isAgent() || isManager() ||
         resource.data.requesterId == uid() ||
-        resource.data.assigneeId == uid()
+        resource.data.assigneeId  == uid()
       );
       allow create: if isActiveUser();
       allow update: if isActiveUser() && (
-        isAgent() ||
-        isManager() ||
-        // Requester can update own ticket (add comments, close)
+        isAgent() || isManager() ||
         resource.data.requesterId == uid()
       );
       allow delete: if isActiveUser() && isSuperAdmin();
     }
 
-    // ── Ticket Comments (subcollection) ───────────────────────────────────────
     match /tickets/{ticketId}/comments/{commentId} {
       allow read:   if isActiveUser();
       allow create: if isActiveUser();
@@ -93,7 +111,7 @@ service cloud.firestore {
 
     // ── Assets (ITAM) ─────────────────────────────────────────────────────────
     match /assets/{assetId} {
-      allow read:   if isActiveUser() && (isAgent() || isManager() || sameOrg(resource));
+      allow read:   if isActiveUser();
       allow create: if isActiveUser() && (isAgent() || isAdmin());
       allow update: if isActiveUser() && (isAgent() || isAdmin());
       allow delete: if isActiveUser() && isAdmin();
@@ -101,8 +119,7 @@ service cloud.firestore {
 
     // ── Employees (HRMS) ──────────────────────────────────────────────────────
     match /employees/{empId} {
-      // IT agents can read name/dept/org fields only (handled client-side by projection)
-      allow read:   if isActiveUser() && (isHR() || isAgent() || isManager() || sameOrg(resource));
+      allow read:   if isActiveUser();
       allow create: if isActiveUser() && isHR();
       allow update: if isActiveUser() && isHR();
       allow delete: if isActiveUser() && isOrgAdmin();
@@ -110,35 +127,42 @@ service cloud.firestore {
 
     // ── Work Orders (FSO) ─────────────────────────────────────────────────────
     match /workOrders/{woId} {
-      allow read:   if isActiveUser() && (isFSO() || isManager() || resource.data.assigneeId == uid());
+      allow read:   if isActiveUser() && (
+        isFSO() || isManager() || resource.data.assigneeId == uid()
+      );
       allow create: if isActiveUser() && (isFSO() || isManager());
-      allow update: if isActiveUser() && (isFSO() || isManager() || resource.data.assigneeId == uid());
+      allow update: if isActiveUser() && (
+        isFSO() || isManager() || resource.data.assigneeId == uid()
+      );
       allow delete: if isActiveUser() && isAdmin();
     }
 
     // ── Access Requests (IAM) ─────────────────────────────────────────────────
     match /accessRequests/{reqId} {
-      allow read:   if isActiveUser() && (
+      allow read: if isActiveUser() && (
         isAdmin() || isManager() ||
         resource.data.requesterId == uid() ||
-        resource.data.approverId == uid()
+        resource.data.approverId  == uid()
       );
       allow create: if isActiveUser();
-      allow update: if isActiveUser() && (isAdmin() || isManager() || resource.data.approverId == uid());
+      allow update: if isActiveUser() && (
+        isAdmin() || isManager() || resource.data.approverId == uid()
+      );
       allow delete: if isActiveUser() && isAdmin();
     }
 
     // ── Visitors ──────────────────────────────────────────────────────────────
     match /visitors/{visId} {
-      allow read:   if isActiveUser() && (isAgent() || isManager() || resource.data.hostId == uid());
+      allow read:   if isActiveUser();
       allow create: if isActiveUser();
       allow update: if isActiveUser() && (isAgent() || isManager() || resource.data.hostId == uid());
       allow delete: if isActiveUser() && isAdmin();
     }
 
     // ── Assignment Groups ─────────────────────────────────────────────────────
+    // All authenticated active users can read groups (needed for ticket assignment dropdowns)
     match /assignment_groups/{grpId} {
-      allow read:   if isActiveUser();
+      allow read:   if isAuth();
       allow create: if isActiveUser() && isAdmin();
       allow update: if isActiveUser() && isAdmin();
       allow delete: if isActiveUser() && isOrgAdmin();
@@ -152,7 +176,7 @@ service cloud.firestore {
       allow delete: if isActiveUser() && isOrgAdmin();
     }
 
-    // ── Audit Logs — append only, never edit/delete ───────────────────────────
+    // ── Audit Logs — append-only ──────────────────────────────────────────────
     match /audit_logs/{logId} {
       allow read:   if isActiveUser() && isAdmin();
       allow create: if isActiveUser();
@@ -163,14 +187,14 @@ service cloud.firestore {
     // ── Notifications ─────────────────────────────────────────────────────────
     match /notifications/{notifId} {
       allow read:   if isAuth() && (isAdmin() || resource.data.userId == uid());
-      allow create: if isAuth() && isAgent();
+      allow create: if isAuth();
       allow update: if isAuth() && (isAdmin() || resource.data.userId == uid());
       allow delete: if isAuth() && isAdmin();
     }
 
     // ── Custom Roles ──────────────────────────────────────────────────────────
     match /custom_roles/{roleId} {
-      allow read:   if isActiveUser() && isAdmin();
+      allow read:   if isActiveUser();
       allow create: if isActiveUser() && isOrgAdmin();
       allow update: if isActiveUser() && isOrgAdmin();
       allow delete: if isActiveUser() && isOrgAdmin();
@@ -190,10 +214,10 @@ service cloud.firestore {
       allow delete: if isActiveUser() && isAdmin();
     }
 
-    // ── Meta / Counters (internal) ────────────────────────────────────────────
+    // ── Meta / counters ───────────────────────────────────────────────────────
     match /meta/{docId} {
-      allow read:   if isAuth();
-      allow write:  if isAuth();
+      allow read:  if isAuth();
+      allow write: if isAuth();
     }
 
     // ── Reports ───────────────────────────────────────────────────────────────

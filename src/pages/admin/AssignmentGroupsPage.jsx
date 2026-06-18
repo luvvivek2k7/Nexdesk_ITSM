@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react'
 import { toast } from 'react-hot-toast'
 import { Plus, Trash2, UserPlus, UserMinus, Users, ChevronDown, Edit3, X, Check } from 'lucide-react'
-import { db, collection, getDocs } from '@/lib/firebase'
+import { db, collection, getDocs, query, where } from '@/lib/firebase'
 import { createGroup, getGroups, updateGroup, deleteGroup, addMember, removeMember, listenToGroups } from '@/lib/assignmentService'
 import { CATEGORIES, TICKET_TYPES } from '@/lib/constants'
 import { Card, CardHeader, Badge, Button, EmptyState, Spinner } from '@/components/shared/index.jsx'
@@ -56,7 +56,8 @@ function GroupCard({ group, allUsers, onDeleted }) {
   }
 
   const handleToggle = async () => {
-    try { await updateGroup(group.id, { active: !group.active }) }
+    const newActive = group.active !== true  // explicit boolean toggle
+    try { await updateGroup(group.id, { active: newActive }) }
     catch { toast.error('Failed to toggle') }
   }
 
@@ -75,7 +76,9 @@ function GroupCard({ group, allUsers, onDeleted }) {
             {group.members?.length ?? 0} members{group.description ? ` · ${group.description}` : ''}
           </p>
         </div>
-        <Badge variant={group.active ? 'green' : 'gray'}>{group.active ? 'Active' : 'Disabled'}</Badge>
+        <Badge variant={group.active === true ? 'green' : 'default'}>
+          {group.active === true ? 'Active' : 'Disabled'}
+        </Badge>
         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
           <button onClick={handleToggle} className="p-1.5 rounded hover:bg-[var(--bg-elevated)]"
             title={group.active ? 'Disable' : 'Enable'}>
@@ -162,14 +165,27 @@ export default function AssignmentGroupsPage() {
 
   // Real-time groups
   useEffect(() => {
-    const unsub = listenToGroups(data => { setGroups(data); setLoading(false) }, () => setLoading(false), orgId)
+    if (!orgId) return
+    setLoading(true)
+    const unsub = listenToGroups(
+      data => { setGroups(data); setLoading(false) },
+      () => setLoading(false),
+      orgId
+    )
     return unsub
-  }, [])
+  }, [orgId])
 
   // Load all users for member picker
   useEffect(() => {
-    getDocs(collection(db, 'users')).then(snap => setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
-  }, [])
+    if (!orgId) return
+    getDocs(query(collection(db, 'users'), where('orgId', '==', orgId)))
+      .then(snap => setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+      .catch(() => {
+        // Fallback: load all users if orgId filter fails
+        getDocs(collection(db, 'users'))
+          .then(snap => setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+      })
+  }, [orgId])
 
   const handleCreate = async () => {
     if (!form.name.trim()) { toast.error('Group name required'); return }

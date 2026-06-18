@@ -1,39 +1,35 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// NexDesk — ITAM Dashboard (Phase 2)
-// IT Asset Management: inventory, CMDB, lifecycle, compliance
-// ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect } from 'react'
-import { useNavigate }         from 'react-router-dom'
-import { Plus, RefreshCw, AlertTriangle, CheckCircle, Monitor, Server } from 'lucide-react'
-import { db, collection, getDocs, addDoc, serverTimestamp } from '@/lib/firebase'
+import { Plus, RefreshCw, AlertTriangle } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import {
-  Card, CardHeader, StatCard, Badge, Button, AIInsight, EmptyState,
+  Card, CardHeader, StatCard, Badge, Button, AIInsight, EmptyState, Spinner,
 } from '@/components/shared/index.jsx'
 import { toast } from 'react-hot-toast'
 import { PieChart, Pie, Cell, BarChart, Bar, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { listenToAssets, createAsset, updateAsset } from '@/lib/assetService'
 
 const ASSET_TYPES    = ['Laptop','Desktop','Server','Mobile','Network','Cloud','Printer','Other']
 const LIFECYCLE      = ['Procurement','Active','Maintenance','Retiring','Disposed']
 const PIE_COLORS     = ['#3b62f5','#22c55e','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#6b7280']
 
-const SAMPLE_ASSETS = [
-  { id:'AST-001', name:'HP EliteBook 850 G9',  type:'Laptop',  status:'Active',    user:'Ananya Sharma',  dept:'Marketing',  warranty:'2026-03', compliance:true  },
-  { id:'AST-002', name:'Dell PowerEdge R750',   type:'Server',  status:'Active',    user:'IT Dept',         dept:'IT Ops',     warranty:'2025-08', compliance:true  },
-  { id:'AST-003', name:'Cisco Catalyst 9300',   type:'Network', status:'Active',    user:'Network Team',    dept:'IT Ops',     warranty:'2024-12', compliance:false },
-  { id:'AST-004', name:'iPhone 14 Pro',          type:'Mobile',  status:'Active',    user:'Ravi Kumar',     dept:'IT',         warranty:'2025-06', compliance:true  },
-  { id:'AST-005', name:'HP LaserJet M528f',      type:'Printer', status:'Retiring',  user:'Finance Fl 3',   dept:'Finance',    warranty:'2024-03', compliance:false },
-  { id:'AST-006', name:'MacBook Pro M3',         type:'Laptop',  status:'Active',    user:'Developer 1',    dept:'Engineering',warranty:'2027-01', compliance:true  },
-  { id:'AST-007', name:'Dell Optiplex 7090',     type:'Desktop', status:'Active',    user:'Meera Pillai',   dept:'Finance',    warranty:'2025-11', compliance:true  },
-  { id:'AST-008', name:'Azure VM — prod-web-01', type:'Cloud',   status:'Active',    user:'DevOps',         dept:'Engineering',warranty:'N/A',     compliance:true  },
-]
-
 export default function ITAMDashboard() {
-  const navigate = useNavigate()
-  const { isAdmin, isAgent } = useAuth()
-  const [assets,  setAssets]  = useState(SAMPLE_ASSETS)
-  const [loading, setLoading] = useState(false)
+  const { isAdmin, isAgent, profile, orgId, audit } = useAuth()
+  const [assets,  setAssets]  = useState([])
+  const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
+  const [saving,  setSaving]  = useState(false)
+
+  // ── Real-time Firestore listener ─────────────────────────────────────────
+  useEffect(() => {
+    if (!orgId) return
+    setLoading(true)
+    const unsub = listenToAssets(
+      { orgId },
+      data => { setAssets(data); setLoading(false) },
+      err  => { console.warn('ITAM listen error:', err.message); setLoading(false) }
+    )
+    return unsub
+  }, [orgId])
 
   // Summary stats
   const total      = assets.length
@@ -150,7 +146,7 @@ export default function ITAMDashboard() {
                       <td><span className="font-mono text-[11px] text-blue-400">{a.id}</span></td>
                       <td>
                         <div className="text-xs font-medium" style={{ color:'var(--text-primary)' }}>{a.name}</div>
-                        <div className="text-[10px]" style={{ color:'var(--text-muted)' }}>{a.dept}</div>
+                        <div className="text-[10px]" style={{ color:'var(--text-muted)' }}>{a.department || a.dept || '—'}</div>
                       </td>
                       <td><Badge variant="blue" className="text-[10px]">{a.type}</Badge></td>
                       <td>
@@ -158,7 +154,7 @@ export default function ITAMDashboard() {
                           {a.status}
                         </Badge>
                       </td>
-                      <td><span className="text-xs" style={{ color:'var(--text-secondary)' }}>{a.user}</span></td>
+                      <td><span className="text-xs" style={{ color:'var(--text-secondary)' }}>{a.assignedTo || a.user || '—'}</span></td>
                       <td>
                         <span className={`text-xs font-mono ${
                           a.warranty !== 'N/A' && new Date(a.warranty) < new Date(Date.now() + 30*86400000)
@@ -237,11 +233,35 @@ export default function ITAMDashboard() {
                 className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[var(--bg-hover)]"
                 style={{ color:'var(--text-muted)' }}>✕</button>
             </div>
-            <form onSubmit={e => {
+            <form onSubmit={async e => {
               e.preventDefault()
               const fd = new FormData(e.target)
-              toast.success(`Asset "${fd.get('name')}" added to CMDB`)
-              setShowAdd(false)
+              const name = fd.get('name')?.trim()
+              if (!name) { toast.error('Asset name is required'); return }
+              setSaving(true)
+              try {
+                await createAsset({
+                  name,
+                  tag:        fd.get('tag')?.trim()     || '',
+                  type:       fd.get('category')        || 'Other',
+                  serial:     fd.get('serial')?.trim()  || '',
+                  status:     'Active',
+                  compliance: true,
+                  assignedTo: fd.get('assignedTo')?.trim() || null,
+                  location:   fd.get('location')?.trim()  || '',
+                  warranty:   fd.get('warranty')           || 'N/A',
+                  cost:       parseInt(fd.get('cost') || '0', 10),
+                  orgId,
+                }, profile)
+                audit?.('asset_created', 'ITAM', name)
+                toast.success(`Asset "${name}" added to CMDB`)
+                setShowAdd(false)
+                e.target.reset()
+              } catch (err) {
+                toast.error('Failed to save asset: ' + err.message)
+              } finally {
+                setSaving(false)
+              }
             }} className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -284,9 +304,11 @@ export default function ITAMDashboard() {
                 <button type="button" onClick={() => setShowAdd(false)}
                   className="flex-1 px-4 py-2 rounded-lg text-sm"
                   style={{ border:'1px solid var(--border-default)', color:'var(--text-secondary)' }}>Cancel</button>
-                <button type="submit"
+                <button type="submit" disabled={saving}
                   className="flex-1 px-4 py-2 rounded-lg text-sm font-semibold text-white"
-                  style={{ background:'var(--accent)' }}>Add to CMDB</button>
+                  style={{ background: saving ? 'var(--bg-hover)' : 'var(--accent)' }}>
+                  {saving ? 'Saving…' : 'Add to CMDB'}
+                </button>
               </div>
             </form>
           </div>

@@ -258,21 +258,21 @@ export default function IAMDashboard() {
                 {requests.map(r => (
                   <tr key={r.id}>
                     <td>
-                      <div className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{r.requester}</div>
-                      <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{r.dept}</div>
+                      <div className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{r.requesterName || r.requester || '—'}</div>
+                      <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{r.requesterDept || r.dept || '—'}</div>
                     </td>
                     <td>
-                      <div className="text-xs" style={{ color: 'var(--text-primary)' }}>{r.app}</div>
-                      <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{r.role}</div>
+                      <div className="text-xs" style={{ color: 'var(--text-primary)' }}>{r.app || r.system || '—'}</div>
+                      <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{r.accessLevel || r.role || '—'}</div>
                     </td>
                     <td>
                       <div className="w-8 h-5 rounded text-[10px] flex items-center justify-center font-bold text-white"
-                        style={{ background: r.risk >= 80 ? '#ef4444' : r.risk >= 50 ? '#f59e0b' : '#22c55e' }}>
-                        {r.risk}
+                        style={{ background: (r.riskScore ?? r.risk ?? 0) >= 80 ? '#ef4444' : (r.riskScore ?? r.risk ?? 0) >= 50 ? '#f59e0b' : '#22c55e' }}>
+                        {r.riskScore ?? r.risk ?? '—'}
                       </div>
                     </td>
-                    <td><span className="text-[11px]" style={{ color: r.status === 'Flagged' ? 'var(--warning)' : 'var(--text-muted)' }}>{r.aiRec}</span></td>
-                    <td><Badge variant="amber" className="text-[10px]">{r.sla}</Badge></td>
+                    <td><span className="text-[11px]" style={{ color: r.status === 'Flagged' ? 'var(--warning)' : 'var(--text-muted)' }}>{r.aiRec || 'Pending review'}</span></td>
+                    <td><Badge variant="amber" className="text-[10px]">{r.sla || '3 days'}</Badge></td>
                     <td><Badge variant={r.status === 'Approved' ? 'green' : r.status === 'Rejected' ? 'red' : r.status === 'Flagged' ? 'red' : 'amber'} className="text-[10px]">{r.status}</Badge></td>
                     <td>
                       {['Pending', 'Flagged'].includes(r.status) && (isAdmin || isManager) && (

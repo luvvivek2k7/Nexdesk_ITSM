@@ -36,7 +36,7 @@ export function AuthProvider({ children }) {
     const userRef = doc(db, 'users', uid)
 
     try {
-      // 1. Check if exact UID doc exists (returning user)
+      // 1. Check if exact UID doc exists (returning user or already merged)
       const snap = await getDoc(userRef)
 
       if (snap.exists()) {
@@ -62,53 +62,10 @@ export function AuthProvider({ children }) {
         return
       }
 
-      // 2. Not found by UID — check for placeholder by email (admin pre-created)
-      if (email !== SUPER_ADMIN_EMAIL) {
-        const placeholderSnap = await getDocs(
-          query(collection(db, 'users'), where('email', '==', email), where('isPlaceholder', '==', true))
-        )
-
-        if (placeholderSnap.empty) {
-          // No placeholder — this email is not allowlisted
-          await signOutUser()
-          setAuthError('denied')
-          setProfile(null)
-          return
-        }
-
-        // Found placeholder — merge with real Firebase uid
-        const placeholder    = placeholderSnap.docs[0]
-        const placeholderData = placeholder.data()
-
-        // Create real doc at correct UID
-        const mergedProfile = {
-          ...placeholderData,
-          uid,
-          photoURL:      firebaseUser.photoURL ?? placeholderData.photoURL ?? null,
-          displayName:   placeholderData.displayName || firebaseUser.displayName || email.split('@')[0],
-          isPlaceholder: false,
-          lastSeenAt:    serverTimestamp(),
-          updatedAt:     serverTimestamp(),
-          active:        true,
-        }
-
-        await setDoc(userRef, mergedProfile)
-
-        // Remove old placeholder doc (best effort)
-        if (placeholder.id !== uid) {
-          placeholder.ref.delete().catch(() => {})
-        }
-
-        setProfile({ id: uid, ...mergedProfile })
-        setAuthError(null)
-        return
-      }
-
-      // 3. Super admin email with no doc — bootstrap
+      // 2. Super admin bootstrap (no existing doc)
       if (email === SUPER_ADMIN_EMAIL) {
         const saProfile = {
-          uid,
-          email,
+          uid, email,
           displayName:   firebaseUser.displayName ?? 'Vivekanand Jha',
           photoURL:      firebaseUser.photoURL ?? null,
           role:          ROLES.SUPER_ADMIN,
@@ -127,22 +84,83 @@ export function AuthProvider({ children }) {
         await setDoc(userRef, saProfile)
         setProfile({ id: uid, ...saProfile })
         setAuthError(null)
+        return
       }
+
+      // 3. No UID doc — search for placeholder by email only (single where = no composite index needed)
+      let placeholderSnap
+      try {
+        placeholderSnap = await getDocs(
+          query(collection(db, 'users'), where('email', '==', email.toLowerCase()))
+        )
+      } catch (queryErr) {
+        console.warn('Placeholder query failed:', queryErr.message)
+        // If query fails due to permissions, deny access
+        await signOutUser()
+        setAuthError('denied')
+        setProfile(null)
+        return
+      }
+
+      if (placeholderSnap.empty) {
+        // No record found — this email is not allowlisted
+        await signOutUser()
+        setAuthError('denied')
+        setProfile(null)
+        return
+      }
+
+      // Found user record — check it's a placeholder (not an old/duplicate doc)
+      const placeholder     = placeholderSnap.docs[0]
+      const placeholderData = placeholder.data()
+
+      // If found doc is active=false, block them
+      if (placeholderData.active === false) {
+        await signOutUser()
+        setAuthError('deactivated')
+        setProfile(null)
+        return
+      }
+
+      // Merge placeholder into real Firebase UID doc
+      const mergedProfile = {
+        ...placeholderData,
+        uid,
+        email:         email.toLowerCase(),
+        photoURL:      firebaseUser.photoURL ?? placeholderData.photoURL ?? null,
+        displayName:   placeholderData.displayName || firebaseUser.displayName || email.split('@')[0],
+        isPlaceholder: false,
+        lastSeenAt:    serverTimestamp(),
+        updatedAt:     serverTimestamp(),
+        active:        true,
+      }
+
+      await setDoc(userRef, mergedProfile)
+
+      // Remove old placeholder doc (best effort, don't block if fails)
+      if (placeholder.id !== uid) {
+        placeholder.ref.delete().catch(() => {})
+      }
+
+      setProfile({ id: uid, ...mergedProfile })
+      setAuthError(null)
 
     } catch (err) {
       console.error('loadProfile error:', err)
-      // On Firestore error, grant minimal access only for super admin
       if (email === SUPER_ADMIN_EMAIL) {
+        // Super admin fallback — offline mode
         setProfile({
           id: uid, uid, email,
           displayName: firebaseUser.displayName ?? 'Vivekanand Jha',
-          role: ROLES.SUPER_ADMIN,
-          orgId: 'system',
-          active: true,
-          _offline: true,
+          role:        ROLES.SUPER_ADMIN,
+          orgId:       'system',
+          active:      true,
+          _offline:    true,
         })
         setAuthError(null)
       } else {
+        // For other users: show error but don't sign them out yet
+        // They may be offline — let them retry
         setAuthError('error')
         setProfile(null)
       }

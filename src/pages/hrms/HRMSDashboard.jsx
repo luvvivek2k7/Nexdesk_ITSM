@@ -169,23 +169,31 @@ export default function HRMSDashboard() {
                 <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Full Name *</label>
                 <input name="name" required className="nd-input w-full" placeholder="e.g. Priya Sharma" />
               </div>
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Work Email *</label>
+                <input name="email" type="email" required className="nd-input w-full" placeholder="priya.sharma@company.com" />
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Department *</label>
-                  <input name="dept" required className="nd-input w-full" placeholder="e.g. Engineering" />
+                  <input name="department" required className="nd-input w-full" placeholder="e.g. Engineering" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Designation *</label>
-                  <input name="empRole" required className="nd-input w-full" placeholder="e.g. Software Engineer" />
+                  <input name="designation" required className="nd-input w-full" placeholder="e.g. Software Engineer" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Join Date</label>
                   <input name="joinDate" type="date" className="nd-input w-full" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Reporting Manager</label>
-                  <input name="manager" className="nd-input w-full" placeholder="Manager name" />
+                  <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Phone</label>
+                  <input name="phone" className="nd-input w-full" placeholder="+91 98765 43210" />
                 </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Reporting Manager</label>
+                <input name="manager" className="nd-input w-full" placeholder="Manager name" />
               </div>
               <div className="flex gap-3 pt-1">
                 <button type="button" onClick={() => setShowForm(false)}
@@ -210,7 +218,7 @@ export default function HRMSDashboard() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label="Total Employees"  value={EMPLOYEES.length} color="blue"  icon={Users}       sub="All departments"   />
+        <StatCard label="Total Employees"  value={employees.length} color="blue"  icon={Users}       sub="All departments"   />
         <StatCard label="On Leave Today"   value={onLeave}          color="amber" icon={Calendar}    sub="Approved leaves"   />
         <StatCard label="eNPS Score"       value={avgENPS}          color={avgENPS >= 8 ? 'green' : 'amber'} icon={Star} sub="Avg engagement"    />
         <StatCard label="Attrition Risk"   value={attritionRisk}    color={attritionRisk > 0 ? 'red' : 'green'} icon={AlertTriangle} sub="Low eNPS flag"  />
@@ -373,22 +381,43 @@ export default function HRMSDashboard() {
             <h3 className="text-sm font-semibold" style={{ color:'var(--text-primary)' }}>
               Leave Requests — {leaves.filter(l => l.status === 'Pending').length} pending
             </h3>
-            <Button size="sm" icon={Plus} onClick={() => {
-              const from = prompt('Leave start date (YYYY-MM-DD):')
-              const to   = prompt('Leave end date (YYYY-MM-DD):')
-              const type = prompt('Leave type (Annual / Sick / Casual):') || 'Annual'
-              if (from && to) {
-                setLeaves(prev => [{
-                  name: 'Current User', type, from, to,
-                  days: Math.max(1, Math.round((new Date(to)-new Date(from))/(86400000))+1),
-                  status:'Pending'
-                }, ...prev])
-                toast.success('Leave request submitted for approval')
-              }
-            }}>
-              Apply Leave
-            </Button>
+            <Button size="sm" icon={Plus} onClick={() => setShowLeaveForm(true)}>Apply Leave</Button>
           </div>
+
+          {/* Leave request form */}
+          {showLeaveForm && (
+            <div className="px-4 py-3" style={{ borderBottom:'1px solid var(--border-subtle)', background:'var(--bg-elevated)' }}>
+              <form onSubmit={handleLeaveRequest} className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Leave Type</label>
+                  <select name="type" className="nd-input w-full">
+                    <option>Annual Leave</option>
+                    <option>Sick Leave</option>
+                    <option>Casual Leave</option>
+                    <option>Maternity / Paternity</option>
+                    <option>Work From Home</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>From *</label>
+                  <input name="from" type="date" required className="nd-input w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>To *</label>
+                  <input name="to" type="date" required className="nd-input w-full" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium mb-1" style={{ color:'var(--text-secondary)' }}>Reason</label>
+                  <input name="reason" className="nd-input w-full" placeholder="Brief reason…" />
+                </div>
+                <div className="col-span-2 flex gap-2">
+                  <button type="submit" className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ background:'var(--accent)' }}>Submit</button>
+                  <button type="button" onClick={() => setShowLeaveForm(false)} className="px-4 py-1.5 rounded-lg text-xs" style={{ border:'1px solid var(--border-default)', color:'var(--text-secondary)' }}>Cancel</button>
+                </div>
+              </form>
+            </div>
+          )}
+
           <div className="overflow-x-auto">
             <table className="nd-table">
               <thead>
@@ -396,8 +425,8 @@ export default function HRMSDashboard() {
               </thead>
               <tbody>
                 {leaves.map((l, i) => (
-                  <tr key={i}>
-                    <td><span className="text-xs font-medium" style={{ color:'var(--text-primary)' }}>{l.emp}</span></td>
+                  <tr key={l.id ?? i}>
+                    <td><span className="text-xs font-medium" style={{ color:'var(--text-primary)' }}>{l.requesterName || l.emp || '—'}</span></td>
                     <td><span className="text-xs" style={{ color:'var(--text-secondary)' }}>{l.type}</span></td>
                     <td><span className="text-xs font-mono" style={{ color:'var(--text-muted)' }}>{l.from}</span></td>
                     <td><span className="text-xs font-mono" style={{ color:'var(--text-muted)' }}>{l.to}</span></td>
@@ -419,6 +448,9 @@ export default function HRMSDashboard() {
                     )}
                   </tr>
                 ))}
+                {leaves.length === 0 && (
+                  <tr><td colSpan={isMgr ? 7 : 6} className="text-center py-8 text-xs" style={{ color:'var(--text-muted)' }}>No leave requests yet</td></tr>
+                )}
               </tbody>
             </table>
           </div>

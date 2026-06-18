@@ -3,11 +3,11 @@
 // Super Admin / Org Admin can create custom roles with per-module permissions
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect } from 'react'
-import { Plus, Shield, Edit2, Trash2, Save, X, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, Shield, Edit2, Trash2, Save, X, ChevronDown, ChevronRight, Users } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { Card, CardHeader, Badge, Button, Spinner, EmptyState } from '@/components/shared/index.jsx'
 import {
-  db, collection, doc, addDoc, updateDoc, deleteDoc,
+  db, collection, doc, addDoc, updateDoc, deleteDoc, getDocs,
   query, where, orderBy, onSnapshot, serverTimestamp,
 } from '@/lib/firebase'
 import { toast } from 'react-hot-toast'
@@ -177,12 +177,17 @@ export default function RolesPage() {
   const { orgId, profile, isSuper, can } = useAuth()
   const canManage = can('MANAGE_ROLES') || isSuper
 
-  const [customRoles, setCustomRoles] = useState([])
-  const [loading,     setLoading]     = useState(true)
-  const [expanded,    setExpanded]    = useState(null)
-  const [showForm,    setShowForm]    = useState(false)
-  const [editing,     setEditing]     = useState(null)
+  const [customRoles,  setCustomRoles]  = useState([])
+  const [users,        setUsers]        = useState([])
+  const [loading,      setLoading]      = useState(true)
+  const [expanded,     setExpanded]     = useState(null)
+  const [showForm,     setShowForm]     = useState(false)
+  const [editing,      setEditing]      = useState(null)
+  const [assignRole,   setAssignRole]   = useState(null)  // role being assigned to a user
+  const [assignUserId, setAssignUserId] = useState('')
+  const [assigning,    setAssigning]    = useState(false)
 
+  // Load custom roles
   useEffect(() => {
     if (!orgId) return
     setLoading(true)
@@ -194,12 +199,43 @@ export default function RolesPage() {
     return unsub
   }, [orgId])
 
+  // Load users for assignment dropdown
+  useEffect(() => {
+    if (!orgId) return
+    getDocs(query(collection(db, 'users'), where('orgId', '==', orgId), where('active', '==', true)))
+      .then(snap => setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+      .catch(() => {
+        getDocs(collection(db, 'users'))
+          .then(snap => setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+      })
+  }, [orgId])
+
   const deleteRole = async (role) => {
     if (!window.confirm(`Delete custom role "${role.name}"? Users with this role will revert to End User.`)) return
     try {
       await deleteDoc(doc(db, 'custom_roles', role.id))
       toast.success(`Role "${role.name}" deleted`)
     } catch (err) { toast.error('Delete failed: ' + err.message) }
+  }
+
+  const handleAssignRole = async () => {
+    if (!assignUserId || !assignRole) return
+    setAssigning(true)
+    try {
+      await updateDoc(doc(db, 'users', assignUserId), {
+        role:         assignRole.id,
+        customRoleId: assignRole.id,
+        customRoleName: assignRole.name,
+        updatedAt:    serverTimestamp(),
+      })
+      toast.success(`Role "${assignRole.name}" assigned`)
+      setAssignRole(null)
+      setAssignUserId('')
+    } catch (err) {
+      toast.error('Assignment failed: ' + err.message)
+    } finally {
+      setAssigning(false)
+    }
   }
 
   const toggleExpand = id => setExpanded(prev => prev === id ? null : id)
@@ -299,12 +335,19 @@ export default function RolesPage() {
                   </div>
                   {canManage && (
                     <div className="flex gap-2 flex-shrink-0">
+                      <button
+                        onClick={() => { setAssignRole(role); setAssignUserId('') }}
+                        className="btn-icon" style={{ width:28, height:28, color:'var(--green)' }}
+                        title="Assign this role to a user">
+                        <Users size={12}/>
+                      </button>
                       <button onClick={() => { setEditing(role); setShowForm(true) }}
                         className="btn-icon" style={{ width:28, height:28 }}>
                         <Edit2 size={12}/>
                       </button>
                       <button onClick={() => deleteRole(role)}
-                        className="btn-icon" style={{ width:28, height:28, color:'var(--red)' }}>
+                        className="btn-icon" style={{ width:28, height:28, color:'var(--red)' }}
+                        title="Delete role">
                         <Trash2 size={12}/>
                       </button>
                     </div>
@@ -340,6 +383,55 @@ export default function RolesPage() {
           onClose={() => { setShowForm(false); setEditing(null) }}
           onSaved={() => { setShowForm(false); setEditing(null) }}
         />
+      )}
+
+      {/* Assign Role to User modal */}
+      {assignRole && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background:'rgba(0,0,0,0.75)' }}
+          onClick={e => e.target === e.currentTarget && setAssignRole(null)}>
+          <div className="w-full max-w-sm rounded-2xl p-6 space-y-4"
+            style={{ background:'var(--bg-surface)', border:'1px solid var(--border-default)' }}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold" style={{ color:'var(--text-primary)' }}>
+                Assign Role — {assignRole.name}
+              </h2>
+              <button onClick={() => setAssignRole(null)}
+                className="w-7 h-7 rounded-lg flex items-center justify-center"
+                style={{ background:'var(--bg-hover)', color:'var(--text-muted)' }}>
+                <X size={14}/>
+              </button>
+            </div>
+            <p className="text-xs" style={{ color:'var(--text-muted)' }}>
+              Select a user to assign the <strong style={{ color:'var(--text-primary)' }}>{assignRole.name}</strong> role.
+              This will replace their current role immediately.
+            </p>
+            <div>
+              <label className="block text-xs font-medium mb-1.5" style={{ color:'var(--text-secondary)' }}>Select User *</label>
+              <select className="nd-input w-full" value={assignUserId}
+                onChange={e => setAssignUserId(e.target.value)}>
+                <option value="">Choose a user…</option>
+                {users.map(u => (
+                  <option key={u.id} value={u.id}>
+                    {u.displayName} ({u.email}) — currently: {u.role}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setAssignRole(null)}
+                className="flex-1 px-4 py-2 rounded-lg text-sm"
+                style={{ border:'1px solid var(--border-default)', color:'var(--text-secondary)' }}>
+                Cancel
+              </button>
+              <button onClick={handleAssignRole} disabled={!assignUserId || assigning}
+                className="flex-1 px-4 py-2 rounded-lg text-sm font-semibold text-white"
+                style={{ background: (!assignUserId || assigning) ? 'var(--bg-hover)' : 'var(--accent)' }}>
+                {assigning ? 'Assigning…' : 'Assign Role'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
